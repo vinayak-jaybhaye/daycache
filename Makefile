@@ -7,7 +7,7 @@
 
 PNPM        := pnpm
 UV          := uv
-UV_API      := $(UV) run --directory apps/api
+UV_API      := cd apps/api && $(UV) run
 DOCKER      := docker compose -f infra/docker-compose.yml
 
 # ---------------------------------------------------------------------------
@@ -47,16 +47,16 @@ dev.infra: ## Start local infrastructure (Postgres, Redis) in the background
 # ---------------------------------------------------------------------------
 
 lint: ## Lint Python (ruff) and TypeScript (ESLint)
-	$(UV_API) ruff check apps/api/
+	$(UV_API) ruff check app/
 	$(PNPM) --filter @daycache/web lint
 
 format: ## Auto-format Python (ruff) and TypeScript (Prettier)
-	$(UV_API) ruff format apps/api/
-	$(UV_API) ruff check --fix apps/api/
+	$(UV_API) ruff format app/
+	$(UV_API) ruff check --fix app/
 	$(PNPM) --filter @daycache/web format
 
 format.check: ## Check formatting without writing changes (CI mode)
-	$(UV_API) ruff format --check apps/api/
+	$(UV_API) ruff format --check app/
 	$(PNPM) --filter @daycache/web format:check
 
 type-check: ## Run Pyright (Python) and tsc (TypeScript)
@@ -71,10 +71,10 @@ test: ## Run all tests
 	$(UV_API) pytest
 
 test.api: ## Run API tests only
-	$(UV_API) pytest apps/api/tests/ -v
+	$(UV_API) pytest tests/ -v
 
 test.watch: ## Run API tests in watch mode
-	$(UV_API) pytest apps/api/tests/ -v --tb=short -p no:cacheprovider
+	$(UV_API) pytest tests/ -v --tb=short -p no:cacheprovider
 
 # ---------------------------------------------------------------------------
 # Database

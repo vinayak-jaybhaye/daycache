@@ -41,10 +41,12 @@ jobs:
         run: uv sync
 
       - name: Ruff lint
-        run: uv run --directory apps/api ruff check apps/api/
+        working-directory: apps/api
+        run: uv run ruff check app/
 
       - name: Ruff format check
-        run: uv run --directory apps/api ruff format --check apps/api/
+        working-directory: apps/api
+        run: uv run ruff format --check app/
 
   type-check:
     name: Type check (Pyright)
