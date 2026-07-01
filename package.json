@@ -1,0 +1,18 @@
+{
+  "name": "daycache-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DayCache monorepo — AI-powered journaling application",
+  "scripts": {
+    "dev": "pnpm --filter @daycache/web dev",
+    "build": "pnpm --filter @daycache/web build",
+    "lint": "pnpm --filter @daycache/web lint",
+    "type-check": "pnpm --filter @daycache/web type-check",
+    "format": "pnpm --filter @daycache/web format",
+    "format:check": "pnpm --filter @daycache/web format:check",
+    "test:web": "pnpm --filter @daycache/web test"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
