@@ -103,7 +103,7 @@ async def test_login_success(
     login_payload = {
         "email": "login_success@example.com",
         "password": "password123",
-        "device_identifier": "test-device-uuid-1",
+        "installation_id": "test-device-uuid-1",
         "device_name": "Simulator iPhone",
         "platform": "ios",
     }
@@ -121,7 +121,7 @@ async def test_login_success(
     result = await db_session.execute(
         select(Device)
         .options(joinedload(Device.sessions))
-        .where(Device.device_identifier == "test-device-uuid-1")
+        .where(Device.installation_id == "test-device-uuid-1")
     )
     device = result.unique().scalar_one_or_none()
     assert device is not None
@@ -144,7 +144,7 @@ async def test_login_invalid_credentials(
     login_payload = {
         "email": "login_invalid@example.com",
         "password": "wrongpassword",
-        "device_identifier": "device-1",
+        "installation_id": "device-1",
         "platform": "web",
     }
     response = await async_client.post("/api/v1/auth/login", json=login_payload)
@@ -168,7 +168,7 @@ async def test_get_me_flow(async_client: AsyncClient, db_session: AsyncSession) 
         json={
             "email": email,
             "password": "password123",
-            "device_identifier": "device-me",
+            "installation_id": "device-me",
             "platform": "web",
         },
     )
@@ -183,7 +183,7 @@ async def test_get_me_flow(async_client: AsyncClient, db_session: AsyncSession) 
 async def test_logout_clears_cookie(
     async_client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Test POST /auth/logout revokes session in DB and deletes client cookie."""
+    """Test POST /auth/logout soft-deletes (revokes) session in DB and deletes client cookie."""
     settings = get_settings()
     cookie_name = settings.SESSION_COOKIE_NAME
 
@@ -197,7 +197,7 @@ async def test_logout_clears_cookie(
         json={
             "email": email,
             "password": "password123",
-            "device_identifier": "device-logout",
+            "installation_id": "device-logout",
             "platform": "web",
         },
     )
@@ -211,9 +211,12 @@ async def test_logout_clears_cookie(
         or async_client.cookies[cookie_name] == ""
     )
 
-    # Verify session deleted in DB
+    # Verify session remains in DB but has revoked_at set (soft-deleted)
+    db_session.expire_all()
     result = await db_session.execute(select(UserSession))
-    assert len(result.scalars().all()) == 0
+    sessions = result.scalars().all()
+    assert len(sessions) == 1
+    assert sessions[0].revoked_at is not None
 
 
 @pytest.mark.asyncio
@@ -240,7 +243,7 @@ async def test_session_management(
             json={
                 "email": email,
                 "password": "password123",
-                "device_identifier": "device-a",
+                "installation_id": "device-a",
                 "device_name": "Device A",
                 "platform": "web",
             },
@@ -251,7 +254,7 @@ async def test_session_management(
             json={
                 "email": email,
                 "password": "password123",
-                "device_identifier": "device-b",
+                "installation_id": "device-b",
                 "device_name": "Device B",
                 "platform": "ios",
             },
@@ -276,7 +279,7 @@ async def test_session_management(
         )
         assert revoke_res.status_code == 204
 
-        # Verify session A is gone
+        # Verify session A is gone (soft-deleted, not listed)
         sessions_res2 = await client_b.get("/api/v1/auth/sessions")
         assert len(sessions_res2.json()) == 1
 
@@ -304,13 +307,13 @@ async def test_device_centric_view(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client_b,
     ):
-        # Establish two sessions on Device A (e.g. Chrome and Firefox on same device_identifier)
+        # Establish two sessions on Device A (e.g. Chrome and Firefox on same installation_id)
         await client_a.post(
             "/api/v1/auth/login",
             json={
                 "email": email,
                 "password": "password123",
-                "device_identifier": "device-shared",
+                "installation_id": "device-shared",
                 "device_name": "My Desktop",
                 "platform": "web",
             },
@@ -320,7 +323,7 @@ async def test_device_centric_view(
             json={
                 "email": email,
                 "password": "password123",
-                "device_identifier": "device-shared",
+                "installation_id": "device-shared",
                 "device_name": "My Desktop",
                 "platform": "web",
             },
@@ -332,7 +335,7 @@ async def test_device_centric_view(
             json={
                 "email": email,
                 "password": "password123",
-                "device_identifier": "device-mobile",
+                "installation_id": "device-mobile",
                 "device_name": "My iPhone",
                 "platform": "ios",
             },
@@ -375,7 +378,7 @@ async def test_last_used_at_threshold_throttling(
         json={
             "email": email,
             "password": "password123",
-            "device_identifier": "device-throttle",
+            "installation_id": "device-throttle",
             "platform": "web",
         },
     )

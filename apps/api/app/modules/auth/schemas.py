@@ -23,7 +23,7 @@ class UserLoginRequest(BaseModel):
 
     email: EmailStr
     password: str
-    device_identifier: str = Field(..., min_length=1, max_length=200)
+    installation_id: str = Field(..., min_length=1, max_length=200)
     device_name: str | None = Field(None, max_length=100)
     platform: DevicePlatform
 
@@ -49,8 +49,8 @@ class SessionResponse(BaseModel):
     id: UUID
     device_name: str | None
     device_platform: DevicePlatform
-    ip_address: str | None
-    user_agent: str | None
+    created_ip: str | None
+    created_user_agent: str | None
     last_used_at: datetime
     created_at: datetime
     is_current: bool
@@ -62,8 +62,8 @@ class DeviceSessionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    ip_address: str | None
-    user_agent: str | None
+    created_ip: str | None
+    created_user_agent: str | None
     last_used_at: datetime
     is_current: bool
 

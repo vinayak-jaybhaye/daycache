@@ -132,13 +132,13 @@ class AuthService:
 
         now = datetime.now(UTC)
 
-        # 1. Resolve Device (scoped strictly to user_id + device_identifier)
-        device = await device_repo.get_by_identifier(user.id, data.device_identifier)
+        # 1. Resolve Device (scoped strictly to user_id + installation_id)
+        device = await device_repo.get_by_installation_id(user.id, data.installation_id)
 
         if device is None:
             device = Device(
                 user_id=user.id,
-                device_identifier=data.device_identifier,
+                installation_id=data.installation_id,
                 name=data.device_name,
                 platform=data.platform,
                 last_seen_at=now,
@@ -160,8 +160,8 @@ class AuthService:
         session = Session(
             device_id=device.id,
             token_hash=token_hash,
-            ip_address=ip_address,
-            user_agent=user_agent,
+            created_ip=ip_address,
+            created_user_agent=user_agent,
             expires_at=expires_at,
             last_used_at=now,
         )

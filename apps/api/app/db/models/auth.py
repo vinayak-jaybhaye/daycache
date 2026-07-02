@@ -61,7 +61,7 @@ class Device(UUIDMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
-    device_identifier: Mapped[str] = mapped_column(Text, nullable=False)
+    installation_id: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str | None] = mapped_column(Text, nullable=True)
     platform: Mapped[DevicePlatform] = mapped_column(
         SQLEnum("web", "ios", "android", name="device_platform"),
@@ -89,7 +89,7 @@ class Device(UUIDMixin, Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "user_id", "device_identifier", name="devices_user_id_device_identifier_key"
+            "user_id", "installation_id", name="devices_user_id_installation_id_key"
         ),
         Index("idx_devices_user_id", "user_id"),
     )
@@ -105,11 +105,15 @@ class Session(UUIDMixin, Base):
         nullable=False,
     )
     token_hash: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    ip_address: Mapped[str | None] = mapped_column(INET, nullable=True)
-    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_ip: Mapped[str | None] = mapped_column(INET, nullable=True)
+    created_user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
     last_used_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

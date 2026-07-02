@@ -145,8 +145,8 @@ async def list_sessions(
                 id=s.id,
                 device_name=device_name,
                 device_platform=device_platform,
-                ip_address=str(s.ip_address) if s.ip_address else None,
-                user_agent=s.user_agent,
+                created_ip=str(s.created_ip) if s.created_ip else None,
+                created_user_agent=s.created_user_agent,
                 last_used_at=s.last_used_at,
                 created_at=s.created_at,
                 is_current=is_current,
@@ -193,8 +193,8 @@ async def list_devices(
         device_groups[dev_id]["sessions"].append(
             DeviceSessionResponse(
                 id=s.id,
-                ip_address=str(s.ip_address) if s.ip_address else None,
-                user_agent=s.user_agent,
+                created_ip=str(s.created_ip) if s.created_ip else None,
+                created_user_agent=s.created_user_agent,
                 last_used_at=s.last_used_at,
                 is_current=is_current_session,
             )
