@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+from typing import Any
+
 from httpx import AsyncClient
 
 
@@ -29,11 +32,25 @@ async def test_health_accepts_incoming_request_id(async_client: AsyncClient) -> 
 
 async def test_ready_returns_503_without_db(async_client: AsyncClient) -> None:
     """Without a real database the readiness check must return 503."""
-    response = await async_client.get("/api/v1/ready")
-    assert response.status_code == 503
-    data = response.json()
-    assert data["status"] == "unavailable"
-    assert data["checks"]["database"] == "error"
+    from app.api.deps import get_db
+    from app.main import app
+
+    class MockSession:
+        async def execute(self, *args: Any, **kwargs: Any) -> None:
+            raise Exception("Database connection failed")
+
+    async def mock_get_db() -> AsyncGenerator[MockSession, None]:
+        yield MockSession()
+
+    app.dependency_overrides[get_db] = mock_get_db
+    try:
+        response = await async_client.get("/api/v1/ready")
+        assert response.status_code == 503
+        data = response.json()
+        assert data["status"] == "unavailable"
+        assert data["checks"]["database"] == "error"
+    finally:
+        app.dependency_overrides.clear()
 
 
 async def test_not_found_returns_consistent_envelope(

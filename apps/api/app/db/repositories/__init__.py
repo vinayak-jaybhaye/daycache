@@ -1,11 +1,18 @@
 """Public repository exports.
 
-Add feature repository imports here as they are implemented:
-
-    from app.db.repositories.auth import UserRepository      # noqa: F401
-    from app.db.repositories.journal import EntryRepository  # noqa: F401
+Provides base and concrete domain repositories.
 """
 
-from app.db.repositories.base import BaseRepository
+from __future__ import annotations
 
-__all__ = ["BaseRepository"]
+from app.db.repositories.base import BaseRepository
+from app.db.repositories.device import DeviceRepository
+from app.db.repositories.session import SessionRepository
+from app.db.repositories.user import UserRepository
+
+__all__ = [
+    "BaseRepository",
+    "DeviceRepository",
+    "SessionRepository",
+    "UserRepository",
+]

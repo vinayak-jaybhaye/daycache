@@ -12,7 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from app.db.models.ai import Summary
+    from app.db.models.ai import Embedding, Summary
     from app.db.models.auth import Device, OAuthAccount
     from app.db.models.journal import Day
     from app.db.models.media import Media
@@ -72,6 +72,11 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     summaries: Mapped[list[Summary]] = relationship(
         "Summary",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    embeddings: Mapped[list[Embedding]] = relationship(
+        "Embedding",
         back_populates="user",
         cascade="all, delete-orphan",
     )

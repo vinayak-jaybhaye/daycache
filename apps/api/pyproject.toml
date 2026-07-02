@@ -13,6 +13,7 @@ dependencies = [
     "asyncpg>=0.30",
     "passlib[bcrypt]>=1.7",
     "pgvector>=0.2.0",
+    "argon2-cffi>=23.1.0",
 ]
 
 [dependency-groups]

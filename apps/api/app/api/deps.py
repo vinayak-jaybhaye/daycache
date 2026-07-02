@@ -11,13 +11,18 @@ Rules:
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.core.config import get_settings as _get_settings
+from app.core.security import hash_session_token
+from app.db.models import Session, User
+from app.db.repositories.session import SessionRepository
 from app.db.session import get_db as _get_db
+from app.exceptions import UnauthorizedError
 
 
 # Re-export so route handlers only need to import from ``api.deps``.
@@ -35,31 +40,66 @@ def get_settings(
 
 
 # ---------------------------------------------------------------------------
-# Auth stubs — implemented when modules/auth is ready
+# Auth dependencies
 # ---------------------------------------------------------------------------
 
 
-async def get_current_user() -> None:  # type: ignore[return]
-    """Return the authenticated user for the current request.
+async def get_current_session(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> Session:
+    """Resolve the active Session based on the session cookie.
 
-    Not yet implemented — will be wired to modules/auth once
-    session-based authentication is built.
+    Updates ``last_used_at`` on the session and ``last_seen_at`` on the device
+    only if the record has not been updated within the last 5 minutes.
+
+    Args:
+        request: The active FastAPI HTTP request.
+        db: Active database session.
+        settings: Application settings.
+
+    Returns:
+        The active Session model instance with preloaded relationships.
 
     Raises:
-        NotImplementedError: Always, until auth is implemented.
+        UnauthorizedError: If the token is missing, invalid, or expired.
     """
-    raise NotImplementedError(
-        "get_current_user() is not yet implemented. "
-        "Implement modules/auth/service.py first."
-    )
+    session_token = request.cookies.get(settings.SESSION_COOKIE_NAME)
+    if not session_token:
+        raise UnauthorizedError("Authentication credentials are required.")
+
+    session_repo = SessionRepository(db)
+    token_hash = hash_session_token(session_token)
+
+    session = await session_repo.get_by_token_hash(token_hash)
+    if session is None:
+        raise UnauthorizedError("Session is invalid or has been revoked.")
+
+    now = datetime.now(UTC)
+    if session.expires_at < now:
+        # Revoke expired session automatically
+        await session_repo.delete(session)
+        raise UnauthorizedError("Session has expired. Please log in again.")
+
+    # Update access tracking at most once every 5 minutes (300 seconds) to avoid write traffic
+    if not session.last_used_at or (now - session.last_used_at).total_seconds() > 300:
+        session.last_used_at = now
+        session.device.last_seen_at = now
+        await db.flush()
+
+    return session
 
 
-async def require_auth() -> None:  # type: ignore[return]
-    """Enforce that the current request is authenticated.
+async def get_current_user(
+    session: Session = Depends(get_current_session),
+) -> User:
+    """Return the authenticated User for the current request.
 
-    Not yet implemented.
+    Args:
+        session: Active session resolved from cookies.
+
+    Returns:
+        The authenticated User instance.
     """
-    raise NotImplementedError(
-        "require_auth() is not yet implemented. "
-        "Implement modules/auth/service.py first."
-    )
+    return session.device.user

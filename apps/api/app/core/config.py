@@ -7,15 +7,28 @@ Access the singleton via ``get_settings()``.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
 
-from pydantic import AnyHttpUrl, PostgresDsn, RedisDsn, SecretStr, field_validator
+from pydantic import (
+    AliasChoices,
+    AnyHttpUrl,
+    Field,
+    PostgresDsn,
+    RedisDsn,
+    SecretStr,
+    field_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Resolve workspace root directory to load the shared .env file
+_root_dir = Path(__file__).resolve().parents[4]
+_env_path = _root_dir / ".env"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(str(_env_path), ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -26,12 +39,29 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     APP_NAME: str = "DayCache API"
     APP_VERSION: str = "0.1.0"
-    APP_ENV: Literal["development", "staging", "production"] = "development"
+    APP_ENV: Literal["development", "staging", "production"] = Field(
+        "development",
+        validation_alias=AliasChoices("API_ENV", "APP_ENV"),
+    )
 
     # ------------------------------------------------------------------
     # Security
     # ------------------------------------------------------------------
-    SECRET_KEY: SecretStr = SecretStr("change-me-in-production-must-be-32-chars!")
+    # No fallback default in code — must be configured via environment or .env
+    SECRET_KEY: SecretStr = Field(
+        ...,
+        validation_alias=AliasChoices("API_SECRET_KEY", "SECRET_KEY"),
+    )
+
+    # ------------------------------------------------------------------
+    # Session / Cookie Configuration
+    # ------------------------------------------------------------------
+    SESSION_TTL: int = 30 * 24 * 60 * 60  # 30 days in seconds
+    SESSION_COOKIE_NAME: str = "daycache_session"
+    SESSION_COOKIE_SECURE: bool = True
+    SESSION_COOKIE_DOMAIN: str | None = None
+    SESSION_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+    SESSION_COOKIE_PATH: str = "/"
 
     @field_validator("SECRET_KEY", mode="after")
     @classmethod
@@ -44,25 +74,30 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Database
     # ------------------------------------------------------------------
-    DATABASE_URL: PostgresDsn = PostgresDsn(
-        "postgresql+asyncpg://daycache:daycache@localhost:5432/daycache"
+    DATABASE_URL: PostgresDsn = Field(
+        ...,
+        validation_alias=AliasChoices("DATABASE_URL"),
     )
 
     # ------------------------------------------------------------------
     # Redis
     # ------------------------------------------------------------------
-    REDIS_URL: RedisDsn = RedisDsn("redis://localhost:6379/0")
+    REDIS_URL: RedisDsn = Field(
+        ...,
+        validation_alias=AliasChoices("REDIS_URL"),
+    )
 
     # ------------------------------------------------------------------
     # CORS
     # ------------------------------------------------------------------
-    CORS_ORIGINS: list[AnyHttpUrl] = [
-        AnyHttpUrl("http://localhost:3000"),
-    ]
+    CORS_ORIGINS: str | list[AnyHttpUrl] = Field(
+        default=[],
+        validation_alias=AliasChoices("API_CORS_ORIGINS", "CORS_ORIGINS"),
+    )
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
-    def parse_cors_origins(cls, v: str | list[str]) -> list[str]:
+    def parse_cors_origins(cls, v: Any) -> list[str]:
         """Accept comma-separated string or a JSON list."""
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",") if origin.strip()]
@@ -90,4 +125,4 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """Return the cached Settings singleton."""
-    return Settings()
+    return Settings()  # type: ignore
