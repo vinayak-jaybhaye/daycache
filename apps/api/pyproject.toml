@@ -10,6 +10,8 @@ dependencies = [
     "pydantic-settings>=2.7",
     "alembic>=1.18",
     "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.30",
+    "passlib[bcrypt]>=1.7",
 ]
 
 [dependency-groups]
@@ -46,6 +48,8 @@ select = [
 ]
 ignore = [
     "E501",  # line too long — handled by formatter
+    "B008",  # Depends() in argument defaults is the canonical FastAPI pattern
+    "UP046", # Generic[T] style preferred for compatibility; PEP 695 syntax is py3.12+ only
 ]
 
 [tool.ruff.lint.isort]

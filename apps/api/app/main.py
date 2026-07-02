@@ -1,56 +1,61 @@
-from contextlib import asynccontextmanager
+"""DayCache API entry point.
+
+This module wires together all application components:
+- Application lifespan (startup / shutdown)
+- Middleware (CORS, request logging)
+- Exception handlers
+- API router
+
+No business logic lives here. Keep this file thin.
+"""
+
+from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.router import router
+from app.core.config import get_settings
+from app.core.lifespan import lifespan
+from app.exceptions.handlers import register_exception_handlers
+from app.middleware.logging import RequestLoggingMiddleware
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: initialise DB connections, caches, etc.
-    yield
-    # Shutdown: clean up resources.
-
+settings = get_settings()
 
 app = FastAPI(
-    title="DayCache API",
-    version="0.1.0",
+    title=settings.APP_NAME,
+    version=settings.APP_VERSION,
     lifespan=lifespan,
+    # Disable interactive docs in production.
+    docs_url=None if settings.APP_ENV == "production" else "/docs",
+    redoc_url=None if settings.APP_ENV == "production" else "/redoc",
+    openapi_url=None if settings.APP_ENV == "production" else "/openapi.json",
 )
 
 # ---------------------------------------------------------------------------
-# Middleware
+# Middleware (registered in reverse order — last added runs first)
 # ---------------------------------------------------------------------------
 
+# 1. CORS — outermost so preflight requests are handled before any other logic.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[str(origin) for origin in settings.CORS_ORIGINS],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ---------------------------------------------------------------------------
-# Routers (uncomment as modules are implemented)
-# ---------------------------------------------------------------------------
-
-# from app.modules.auth.router import router as auth_router
-# from app.modules.journal.router import router as journal_router
-# from app.modules.media.router import router as media_router
-# from app.modules.search.router import router as search_router
-# from app.modules.ai.router import router as ai_router
-
-# app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
-# app.include_router(journal_router, prefix="/api/v1/journal", tags=["journal"])
-# app.include_router(media_router, prefix="/api/v1/media", tags=["media"])
-# app.include_router(search_router, prefix="/api/v1/search", tags=["search"])
-# app.include_router(ai_router, prefix="/api/v1/ai", tags=["ai"])
-
+# 2. Request logging — assigns X-Request-ID and logs every request.
+app.add_middleware(RequestLoggingMiddleware)
 
 # ---------------------------------------------------------------------------
-# Health check
+# Exception handlers
 # ---------------------------------------------------------------------------
 
+register_exception_handlers(app)
 
-@app.get("/health", tags=["health"])
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+# ---------------------------------------------------------------------------
+# Routers
+# ---------------------------------------------------------------------------
+
+app.include_router(router)
