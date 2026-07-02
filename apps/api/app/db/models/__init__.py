@@ -2,14 +2,37 @@
 
 Import every ORM model here so that ``Base.metadata`` is fully populated
 when Alembic inspects it during ``alembic revision --autogenerate``.
-
-Example (once models exist)::
-
-    from app.db.models.user import User          # noqa: F401
-    from app.db.models.session import Session    # noqa: F401
-    from app.db.models.entry import Entry        # noqa: F401
 """
 
-from app.db.base import Base
+from __future__ import annotations
 
-__all__ = ["Base"]
+from app.db.base import Base
+from app.db.models.ai import Embedding, JournalChunk, Summary
+from app.db.models.auth import Device, OAuthAccount, Session
+from app.db.models.journal import Day, JournalEntry
+from app.db.models.media import JournalMedia, Media
+from app.db.models.mood import EntryMood, Mood
+from app.db.models.organization import Collection, CollectionEntry, JournalTag, Tag
+from app.db.models.user import User, UserSettings
+
+__all__ = [
+    "Base",
+    "Collection",
+    "CollectionEntry",
+    "Day",
+    "Device",
+    "Embedding",
+    "EntryMood",
+    "JournalChunk",
+    "JournalEntry",
+    "JournalMedia",
+    "JournalTag",
+    "Media",
+    "Mood",
+    "OAuthAccount",
+    "Session",
+    "Summary",
+    "Tag",
+    "User",
+    "UserSettings",
+]

@@ -1,6 +1,7 @@
 -- DayCache PostgreSQL initialisation
--- This file runs once when the container is first created.
--- Add schema creation, extensions, or seed data here as needed.
+-- Enable extensions required by the DayCache schema
 
--- Example: enable pgcrypto for UUID generation
--- CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+CREATE EXTENSION IF NOT EXISTS "vector";
+CREATE EXTENSION IF NOT EXISTS "citext";

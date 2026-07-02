@@ -11,7 +11,6 @@ It:
 from __future__ import annotations
 
 import asyncio
-import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -28,15 +27,14 @@ from app.db.models import Base
 
 target_metadata = Base.metadata
 
-# Read the database URL from the environment, falling back to the config file.
-DATABASE_URL = os.environ.get("DATABASE_URL") or context.config.get_main_option(
-    "sqlalchemy.url", ""
-)
+# Load database URL from unified Settings
+from app.core.config import get_settings  # noqa: E402
+
+DATABASE_URL = str(get_settings().DATABASE_URL)
 
 if not DATABASE_URL:
     msg = (
-        "DATABASE_URL environment variable is not set. "
-        "Copy .env.example to .env and fill in the value."
+        "DATABASE_URL is not configured in Settings."
     )
     raise RuntimeError(msg)
 

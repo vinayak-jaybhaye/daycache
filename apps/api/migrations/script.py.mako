@@ -10,6 +10,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from alembic import op
+import pgvector
 ${imports if imports else ""}
 
 # revision identifiers, used by Alembic.
