@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDMixin
-from app.db.enums import MediaProcessingStatus, MediaType
+from app.db.enums import MediaProcessingStatus, MediaType, MediaUploadStatus
 
 if TYPE_CHECKING:
     from app.db.models.journal import JournalEntry
@@ -19,7 +19,12 @@ if TYPE_CHECKING:
 
 
 class Media(UUIDMixin, TimestampMixin, Base):
-    """Media asset metadata (stored in object storage)."""
+    """Media asset metadata (stored in object storage).
+
+    Two independent state machines track the lifecycle:
+    - ``upload_status``: whether the client completed the presigned PUT upload.
+    - ``processing_status``: background worker progress (NULL until upload confirmed).
+    """
 
     __tablename__ = "media"
 
@@ -42,7 +47,21 @@ class Media(UUIDMixin, TimestampMixin, Base):
     blurhash: Mapped[str | None] = mapped_column(Text, nullable=True)
     caption: Mapped[str | None] = mapped_column(Text, nullable=True)
     alt_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    processing_status: Mapped[MediaProcessingStatus] = mapped_column(
+
+    # Upload lifecycle — tracks presigned PUT completion.
+    upload_status: Mapped[MediaUploadStatus] = mapped_column(
+        SQLEnum("pending", "uploaded", "expired", name="media_upload_status"),
+        default=MediaUploadStatus.PENDING,
+        nullable=False,
+    )
+    # Expires at is set at row creation and used by the cleanup cron.
+    upload_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    # Processing lifecycle — NULL until the upload is confirmed.
+    processing_status: Mapped[MediaProcessingStatus | None] = mapped_column(
         SQLEnum(
             "pending",
             "processing",
@@ -50,8 +69,8 @@ class Media(UUIDMixin, TimestampMixin, Base):
             "failed",
             name="media_processing_status",
         ),
-        default=MediaProcessingStatus.PENDING,
-        nullable=False,
+        nullable=True,
+        default=None,
     )
     processing_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     processed_at: Mapped[datetime | None] = mapped_column(
@@ -75,8 +94,15 @@ class Media(UUIDMixin, TimestampMixin, Base):
 
     __table_args__ = (
         Index("idx_media_user_id", "user_id"),
+        # Partial index for the cleanup cron — only scans PENDING rows.
         Index(
-            "idx_media_pending",
+            "idx_media_stale_upload",
+            "upload_expires_at",
+            postgresql_where=text("upload_status = 'pending'"),
+        ),
+        # Partial index for the worker queue — only scans active processing rows.
+        Index(
+            "idx_media_pending_processing",
             "processing_status",
             postgresql_where=text("processing_status IN ('pending', 'processing')"),
         ),

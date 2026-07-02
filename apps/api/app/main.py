@@ -59,3 +59,15 @@ register_exception_handlers(app)
 # ---------------------------------------------------------------------------
 
 app.include_router(router)
+
+# ---------------------------------------------------------------------------
+# Local storage internal endpoints (development only)
+# ---------------------------------------------------------------------------
+# When STORAGE_BACKEND=local, mount signed upload/download endpoints so the
+# client can PUT directly without the API proxying bytes — mirrors the
+# presigned URL pattern used in production with S3.
+if settings.STORAGE_BACKEND == "local":
+    from app.storage.local import LocalStorageBackend
+
+    _local_storage = LocalStorageBackend()
+    app.include_router(_local_storage.make_internal_router(), prefix="/internal")

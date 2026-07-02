@@ -37,6 +37,14 @@ class MediaProcessingStatus(StrEnum):
     FAILED = "failed"  # processing failed
 
 
+class MediaUploadStatus(StrEnum):
+    """Upload lifecycle status — tracks whether the client completed the upload."""
+
+    PENDING = "pending"  # presigned URL issued, client hasn't uploaded yet
+    UPLOADED = "uploaded"  # client confirmed upload; object exists in storage
+    EXPIRED = "expired"  # upload TTL elapsed; cleanup cron will remove the row
+
+
 class SummaryScope(StrEnum):
     """Time-series scope of an AI summary."""
 

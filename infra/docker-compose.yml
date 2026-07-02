@@ -22,6 +22,32 @@ services:
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
     command: redis-server /usr/local/etc/redis/redis.conf
 
+  localstack:
+    image: localstack/localstack:3
+    restart: unless-stopped
+    ports:
+      - "4566:4566"
+    environment:
+      # Only boot the S3 service — keeps startup fast.
+      SERVICES: s3
+      DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      # Bucket name forwarded into the init script.
+      S3_BUCKET: ${S3_BUCKET:-daycache-media}
+      # Persist state across restarts.
+      PERSISTENCE: 1
+    volumes:
+      - localstack_data:/var/lib/localstack
+      # Runs automatically when LocalStack is ready.
+      - ./localstack/init-s3.sh:/etc/localstack/init/ready.d/init-s3.sh
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
 volumes:
   postgres_data:
   redis_data:
+  localstack_data:

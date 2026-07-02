@@ -121,6 +121,13 @@ class Settings(BaseSettings):
     S3_SECRET_ACCESS_KEY: SecretStr = SecretStr("")
     S3_ENDPOINT_URL: str = ""  # for Cloudflare R2 / MinIO
 
+    # ------------------------------------------------------------------
+    # Media uploads
+    # ------------------------------------------------------------------
+    MEDIA_MAX_SIZE: int = 50 * 1024 * 1024  # 50 MB — images and videos
+    MEDIA_UPLOAD_TTL: int = 300  # presigned PUT URL lifetime in seconds
+    MEDIA_READ_URL_TTL: int = 3600  # signed read URL lifetime in seconds
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -60,6 +60,13 @@ class ForbiddenError(AppException):
     code = "FORBIDDEN"
 
 
+class GoneError(AppException):
+    """Resource existed but is no longer available."""
+
+    status_code = 410
+    code = "GONE"
+
+
 class UnprocessableError(AppException):
     """Business rule validation failed."""
 
