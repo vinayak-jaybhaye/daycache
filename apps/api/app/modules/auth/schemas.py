@@ -36,7 +36,6 @@ class UserResponse(BaseModel):
     id: UUID
     email: str
     display_name: str
-    avatar_key: str | None
     is_verified: bool
     created_at: datetime
 

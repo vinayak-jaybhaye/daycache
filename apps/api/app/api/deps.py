@@ -103,3 +103,21 @@ async def get_current_user(
         The authenticated User instance.
     """
     return session.device.user
+
+
+# ---------------------------------------------------------------------------
+# Background task dependencies
+# ---------------------------------------------------------------------------
+
+
+async def get_arq_pool() -> object:
+    """Return a shared ARQ Redis pool for enqueueing background jobs.
+
+    Creates a new pool connection per request.  In production this should
+    be promoted to a lifespan-managed singleton to avoid connection overhead.
+    """
+    from arq import create_pool
+    from arq.connections import RedisSettings
+
+    settings = _get_settings()
+    return await create_pool(RedisSettings.from_dsn(str(settings.REDIS_URL)))

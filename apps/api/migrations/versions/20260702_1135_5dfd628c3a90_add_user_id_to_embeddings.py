@@ -11,8 +11,6 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-import pgvector
-
 
 # revision identifiers, used by Alembic.
 revision: str = '5dfd628c3a90'

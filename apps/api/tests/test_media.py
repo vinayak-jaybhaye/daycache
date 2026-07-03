@@ -1,10 +1,13 @@
-"""Integration tests for the Media V1 endpoints.
+"""Integration tests for the avatar upload flow and media internal service.
 
-Covers all four routes:
-  POST   /media/upload
-  POST   /media/{id}/confirm
-  GET    /media/{id}
-  DELETE /media/{id}
+The public /media/* routes are unmounted (media is internal infrastructure).
+These tests cover the avatar flow exposed through /users/me/avatar endpoints:
+
+  POST   /users/me/avatar          (request presigned URL)
+  POST   /users/me/avatar/confirm  (confirm upload, enqueue processing)
+  DELETE /users/me/avatar          (clear avatar reference)
+
+Internal service tests (worker, storage) remain in separate test modules.
 
 Uses:
 - ``InMemoryStorage`` — avoids real disk / S3 I/O.
@@ -19,14 +22,13 @@ import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
 
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.media import get_arq_pool
+from app.api.deps import get_arq_pool
 from app.db.enums import MediaProcessingStatus, MediaUploadStatus
 from app.db.models import Media
 from app.main import app
@@ -125,7 +127,6 @@ async def auth_headers(
     )
     assert login.status_code == 200, login.json()
     cookie_header = login.headers.get("set-cookie", "")
-    # Extract just the session cookie value for subsequent requests.
     return {"Cookie": cookie_header.split(";")[0]}
 
 
@@ -146,8 +147,6 @@ async def override_deps(
     app.dependency_overrides[get_storage] = _get_storage  # type: ignore[assignment]
     app.dependency_overrides[get_arq_pool] = _get_arq_pool  # type: ignore[assignment]
     yield
-    # get_db is already overridden by the db_session conftest fixture.
-    # Only remove the storage / arq overrides here.
     app.dependency_overrides.pop(get_storage, None)
     app.dependency_overrides.pop(get_arq_pool, None)
 
@@ -156,573 +155,315 @@ async def override_deps(
 # Helpers
 # ---------------------------------------------------------------------------
 
-_IMAGE_PAYLOAD = {
-    "media_type": "image",
-    "mime_type": "image/jpeg",
-    "filename": "photo.jpg",
-    "size": 1024 * 100,  # 100 KB
-}
 
-
-async def _request_upload(
+async def _request_avatar_upload(
     client: AsyncClient,
     headers: dict[str, str],
-    payload: dict[str, Any] | None = None,
+    mime_type: str = "image/jpeg",
+    size: int = 1024 * 100,  # 100 KB default
 ) -> dict[str, Any]:
-    """Helper: POST /media/upload and assert 201."""
-    response = await client.post(
-        "/api/v1/media/upload",
-        json=payload or _IMAGE_PAYLOAD,
+    """POST /users/me/avatar and assert 201."""
+    resp = await client.post(
+        "/api/v1/users/me/avatar",
+        json={"mime_type": mime_type, "size": size},
         headers=headers,
     )
-    assert response.status_code == 201, response.json()
-    return response.json()
+    assert resp.status_code == 201, resp.json()
+    return resp.json()
 
 
-async def _put_file(
-    client: AsyncClient,
-    storage: InMemoryStorage,
-    storage_key: str,
-) -> None:
-    """Simulate the client completing the presigned PUT by writing to storage."""
+async def _simulate_put(storage: InMemoryStorage, storage_key: str) -> None:
+    """Simulate the client completing the presigned PUT to storage."""
     await storage.upload(storage_key, b"fake-image-bytes", "image/jpeg")
 
 
 # ===========================================================================
-# POST /media/upload
+# POST /users/me/avatar
 # ===========================================================================
 
 
 @pytest.mark.asyncio
-async def test_upload_success(
+async def test_avatar_upload_request_returns_presigned_url(
     async_client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """Valid image upload request returns 201 with a presigned URL."""
-    data = await _request_upload(async_client, auth_headers)
+    """POST /users/me/avatar returns a presigned upload URL and media_id."""
+    data = await _request_avatar_upload(async_client, auth_headers)
 
     assert "media_id" in data
     assert "upload_url" in data
     assert "upload_expires_at" in data
-    # Local fake backend returns a predictable URL prefix.
-    assert "fake-storage" in data["upload_url"]
+    assert data["upload_url"].startswith("http://fake-storage/put/avatars/")
 
 
 @pytest.mark.asyncio
-async def test_upload_no_auth(async_client: AsyncClient) -> None:
-    """Unauthenticated requests are rejected with 401."""
-    response = await async_client.post("/api/v1/media/upload", json=_IMAGE_PAYLOAD)
-    assert response.status_code == 401
+async def test_avatar_upload_request_no_auth(async_client: AsyncClient) -> None:
+    """Unauthenticated request returns 401."""
+    resp = await async_client.post(
+        "/api/v1/users/me/avatar",
+        json={"mime_type": "image/jpeg"},
+    )
+    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_upload_size_too_large(
+async def test_avatar_upload_unsupported_mime_type(
     async_client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """Files exceeding the 50 MB limit are rejected with 422."""
-    payload = {**_IMAGE_PAYLOAD, "size": 51 * 1024 * 1024}
-    response = await async_client.post(
-        "/api/v1/media/upload", json=payload, headers=auth_headers
+    """Non-image MIME type returns 422."""
+    resp = await async_client.post(
+        "/api/v1/users/me/avatar",
+        json={"mime_type": "video/mp4", "size": 1024},
+        headers=auth_headers,
     )
-    assert response.status_code == 422
-    assert "50 MB" in response.json()["detail"]
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_upload_invalid_mime_for_image(
+async def test_avatar_upload_size_too_large(
     async_client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """Image media_type with a video MIME type is rejected with 422."""
-    payload = {**_IMAGE_PAYLOAD, "mime_type": "video/mp4"}
-    response = await async_client.post(
-        "/api/v1/media/upload", json=payload, headers=auth_headers
+    """File size exceeding 5 MB returns 422."""
+    resp = await async_client.post(
+        "/api/v1/users/me/avatar",
+        json={"mime_type": "image/jpeg", "size": 6 * 1024 * 1024},
+        headers=auth_headers,
     )
-    assert response.status_code == 422
-    assert "MIME" in response.json()["detail"]
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_upload_zero_size_rejected(
+async def test_avatar_upload_zero_size_rejected(
     async_client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """size=0 is rejected by Pydantic (gt=0) before hitting the service."""
-    payload = {**_IMAGE_PAYLOAD, "size": 0}
-    response = await async_client.post(
-        "/api/v1/media/upload", json=payload, headers=auth_headers
+    """Size of zero returns 422."""
+    resp = await async_client.post(
+        "/api/v1/users/me/avatar",
+        json={"mime_type": "image/jpeg", "size": 0},
+        headers=auth_headers,
     )
-    assert response.status_code == 422
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_upload_missing_fields(
-    async_client: AsyncClient,
-    auth_headers: dict[str, str],
-) -> None:
-    """Missing required fields return 422 with validation errors."""
-    response = await async_client.post(
-        "/api/v1/media/upload", json={}, headers=auth_headers
-    )
-    assert response.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_upload_creates_pending_record(
+async def test_avatar_upload_creates_pending_record(
     async_client: AsyncClient,
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """A successful upload request creates a PENDING media row in the DB."""
-    from sqlalchemy import select
+    """A media record is created in PENDING state with an avatars/ storage key."""
+    from uuid import UUID
 
-    data = await _request_upload(async_client, auth_headers)
+    data = await _request_avatar_upload(async_client, auth_headers)
     media_id = UUID(data["media_id"])
 
-    result = await db_session.execute(select(Media).where(Media.id == media_id))
-    media = result.scalar_one_or_none()
-
+    media = await db_session.get(Media, media_id)
     assert media is not None
     assert media.upload_status == MediaUploadStatus.PENDING
+    assert media.storage_key.startswith("avatars/")
     assert media.processing_status is None
-    assert media.upload_expires_at is not None
+
+
+@pytest.mark.asyncio
+async def test_avatar_upload_png_uses_correct_extension(
+    async_client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """PNG MIME type generates a .png storage key."""
+    from uuid import UUID
+
+    data = await _request_avatar_upload(async_client, auth_headers, mime_type="image/png")
+    media_id = UUID(data["media_id"])
+
+    media = await db_session.get(Media, media_id)
+    assert media is not None
+    assert media.storage_key.endswith(".png")
 
 
 # ===========================================================================
-# POST /media/{id}/confirm
+# POST /users/me/avatar/confirm
 # ===========================================================================
 
 
 @pytest.mark.asyncio
-async def test_confirm_success(
+async def test_avatar_confirm_success(
     async_client: AsyncClient,
     auth_headers: dict[str, str],
     storage: InMemoryStorage,
     arq_pool: FakeArqPool,
     db_session: AsyncSession,
 ) -> None:
-    """Confirm after a real upload → UPLOADED/PENDING, job enqueued."""
-    from sqlalchemy import select
+    """Full happy path: upload → PUT → confirm sets avatar_media_id."""
+    from uuid import UUID
 
-    upload_data = await _request_upload(async_client, auth_headers)
-    media_id = upload_data["media_id"]
+    upload_data = await _request_avatar_upload(async_client, auth_headers)
+    storage_key = upload_data["upload_url"].removeprefix("http://fake-storage/put/")
+    await _simulate_put(storage, storage_key)
 
-    # Derive the storage key from the DB record.
-    result = await db_session.execute(select(Media).where(Media.id == UUID(media_id)))
-    media = result.scalar_one()
-    await _put_file(async_client, storage, media.storage_key)
-
-    response = await async_client.post(
-        f"/api/v1/media/{media_id}/confirm", headers=auth_headers
+    resp = await async_client.post(
+        "/api/v1/users/me/avatar/confirm",
+        headers=auth_headers,
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["upload_status"] == "uploaded"
-    assert data["processing_status"] == "pending"
+    assert resp.status_code == 200, resp.json()
+    body = resp.json()
 
-    # Worker job must have been enqueued.
+    # avatar_url is None in the response because processing is still PENDING
+    # (worker not yet run) — avatar_url is only populated when COMPLETED.
+    assert body["avatar_url"] is None
+
+    # But the DB record should have avatar_media_id set and processing enqueued.
+    media_id = UUID(upload_data["media_id"])
+    media = await db_session.get(Media, media_id)
+    assert media is not None
+    assert media.upload_status == MediaUploadStatus.UPLOADED
+    assert media.processing_status == MediaProcessingStatus.PENDING
+
     assert len(arq_pool.enqueued) == 1
     assert arq_pool.enqueued[0][0] == "process_media"
-    assert arq_pool.enqueued[0][1][0] == media_id
 
 
 @pytest.mark.asyncio
-async def test_confirm_object_not_in_storage(
+async def test_avatar_confirm_no_pending_upload(
     async_client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """Confirm without uploading the file returns 422 (storage guard)."""
-    upload_data = await _request_upload(async_client, auth_headers)
-    # Do NOT write anything to storage.
-    response = await async_client.post(
-        f"/api/v1/media/{upload_data['media_id']}/confirm",
+    """Confirm with no pending upload returns 404."""
+    resp = await async_client.post(
+        "/api/v1/users/me/avatar/confirm",
         headers=auth_headers,
     )
-    assert response.status_code == 422
-    assert "storage" in response.json()["detail"].lower()
+    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_confirm_expired_ttl(
+async def test_avatar_confirm_object_not_in_storage(
+    async_client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Confirm before putting the file returns 422."""
+    await _request_avatar_upload(async_client, auth_headers)
+
+    resp = await async_client.post(
+        "/api/v1/users/me/avatar/confirm",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_avatar_confirm_expired_ttl(
     async_client: AsyncClient,
     auth_headers: dict[str, str],
     storage: InMemoryStorage,
     db_session: AsyncSession,
 ) -> None:
-    """Confirm after TTL has elapsed returns 410 Gone."""
-    from sqlalchemy import select
+    """Confirm after TTL expiry returns 410 Gone."""
+    from uuid import UUID
 
-    upload_data = await _request_upload(async_client, auth_headers)
-    media_id = UUID(upload_data["media_id"])
+    upload_data = await _request_avatar_upload(async_client, auth_headers)
+    storage_key = upload_data["upload_url"].removeprefix("http://fake-storage/put/")
+    await _simulate_put(storage, storage_key)
 
-    # Backdate upload_expires_at to simulate expiry.
-    result = await db_session.execute(select(Media).where(Media.id == media_id))
-    media = result.scalar_one()
-    await _put_file(async_client, storage, media.storage_key)
+    # Manually expire the TTL.
+    media = await db_session.get(Media, UUID(upload_data["media_id"]))
+    assert media is not None
     media.upload_expires_at = datetime.now(UTC) - timedelta(seconds=1)
     await db_session.flush()
 
-    response = await async_client.post(
-        f"/api/v1/media/{media_id}/confirm", headers=auth_headers
+    resp = await async_client.post(
+        "/api/v1/users/me/avatar/confirm",
+        headers=auth_headers,
     )
-    assert response.status_code == 410
-    assert "expired" in response.json()["detail"].lower()
+    assert resp.status_code == 410
 
 
 @pytest.mark.asyncio
-async def test_confirm_wrong_user(
-    async_client: AsyncClient,
-    auth_headers: dict[str, str],
-    storage: InMemoryStorage,
-    db_session: AsyncSession,
-) -> None:
-    """Confirm on another user's media returns 404 (no info leakage)."""
-    from sqlalchemy import select
-
-    upload_data = await _request_upload(async_client, auth_headers)
-    media_id = UUID(upload_data["media_id"])
-    result = await db_session.execute(select(Media).where(Media.id == media_id))
-    await _put_file(async_client, storage, result.scalar_one().storage_key)
-
-    # Register a second user and confirm using their session.
-    reg2 = await async_client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": f"other-{uuid.uuid4().hex[:6]}@example.com",
-            "password": "Test1234!secure",
-            "display_name": "Other User",
-        },
-    )
-    login2 = await async_client.post(
-        "/api/v1/auth/login",
-        json={
-            "email": reg2.json()["email"],
-            "password": "Test1234!secure",
-            "installation_id": str(uuid.uuid4()),
-            "device_name": "Device",
-            "platform": "web",
-        },
-    )
-    other_headers = {"Cookie": login2.headers["set-cookie"].split(";")[0]}
-
-    response = await async_client.post(
-        f"/api/v1/media/{media_id}/confirm", headers=other_headers
-    )
-    assert response.status_code == 404
+async def test_avatar_confirm_no_auth(async_client: AsyncClient) -> None:
+    """Unauthenticated confirm returns 401."""
+    resp = await async_client.post("/api/v1/users/me/avatar/confirm")
+    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_confirm_not_found(
-    async_client: AsyncClient,
-    auth_headers: dict[str, str],
-) -> None:
-    """Confirm on a non-existent media_id returns 404."""
-    response = await async_client.post(
-        f"/api/v1/media/{uuid.uuid4()}/confirm", headers=auth_headers
-    )
-    assert response.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_confirm_idempotent(
+async def test_avatar_confirm_replaces_old_avatar_and_deletes_storage(
     async_client: AsyncClient,
     auth_headers: dict[str, str],
     storage: InMemoryStorage,
     arq_pool: FakeArqPool,
     db_session: AsyncSession,
 ) -> None:
-    """Calling confirm twice on an already-UPLOADED record is idempotent (200)."""
-    from sqlalchemy import select
+    """Confirming a new avatar cleans up the old avatar's S3 files and DB record."""
+    from uuid import UUID
 
-    upload_data = await _request_upload(async_client, auth_headers)
-    media_id = upload_data["media_id"]
-    result = await db_session.execute(select(Media).where(Media.id == UUID(media_id)))
-    await _put_file(async_client, storage, result.scalar_one().storage_key)
+    # 1. Upload and confirm the first avatar
+    data1 = await _request_avatar_upload(async_client, auth_headers)
+    key1 = data1["upload_url"].removeprefix("http://fake-storage/put/")
+    await _simulate_put(storage, key1)
+    await async_client.post("/api/v1/users/me/avatar/confirm", headers=auth_headers)
 
-    r1 = await async_client.post(
-        f"/api/v1/media/{media_id}/confirm", headers=auth_headers
-    )
-    r2 = await async_client.post(
-        f"/api/v1/media/{media_id}/confirm", headers=auth_headers
-    )
-    assert r1.status_code == 200
-    assert r2.status_code == 200
-    # Job enqueued only once.
-    assert len(arq_pool.enqueued) == 1
+    # Verify first avatar is in DB and storage
+    media_id1 = UUID(data1["media_id"])
+    assert await db_session.get(Media, media_id1) is not None
+    assert await storage.object_exists(key1)
+
+    # 2. Upload and confirm a second avatar
+    data2 = await _request_avatar_upload(async_client, auth_headers)
+    key2 = data2["upload_url"].removeprefix("http://fake-storage/put/")
+    await _simulate_put(storage, key2)
+    await async_client.post("/api/v1/users/me/avatar/confirm", headers=auth_headers)
+
+    # Verify first avatar is now deleted from DB and storage
+    assert await db_session.get(Media, media_id1) is None
+    assert not await storage.object_exists(key1)
+
+    # Verify second avatar exists and is set
+    media_id2 = UUID(data2["media_id"])
+    assert await db_session.get(Media, media_id2) is not None
+    assert await storage.object_exists(key2)
+
+
+# ===========================================================================
+# DELETE /users/me/avatar
+# ===========================================================================
 
 
 @pytest.mark.asyncio
-async def test_confirm_retry_failed_job(
+async def test_avatar_remove_clears_reference(
     async_client: AsyncClient,
     auth_headers: dict[str, str],
     storage: InMemoryStorage,
     arq_pool: FakeArqPool,
     db_session: AsyncSession,
 ) -> None:
-    """Calling confirm on a FAILED or stuck processing record allows manual retry."""
-    from sqlalchemy import select
+    """DELETE /users/me/avatar clears avatar_media_id and deletes the media file."""
+    from uuid import UUID
 
-    from app.db.enums import MediaProcessingStatus
+    upload_data = await _request_avatar_upload(async_client, auth_headers)
+    storage_key = upload_data["upload_url"].removeprefix("http://fake-storage/put/")
+    await _simulate_put(storage, storage_key)
+    await async_client.post("/api/v1/users/me/avatar/confirm", headers=auth_headers)
 
-    upload_data = await _request_upload(async_client, auth_headers)
-    media_id = upload_data["media_id"]
-    result = await db_session.execute(select(Media).where(Media.id == UUID(media_id)))
-    media = result.scalar_one()
-    await _put_file(async_client, storage, media.storage_key)
+    # Verify object exists before delete.
+    assert await storage.object_exists(storage_key)
 
-    # 1. First confirmation succeeds
-    r1 = await async_client.post(
-        f"/api/v1/media/{media_id}/confirm", headers=auth_headers
-    )
-    assert r1.status_code == 200
-    assert len(arq_pool.enqueued) == 1
+    resp = await async_client.delete("/api/v1/users/me/avatar", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["avatar_url"] is None
 
-    # 2. Simulate background task failing and setting state to FAILED
-    media.processing_status = MediaProcessingStatus.FAILED
-    media.processing_error = "Simulated OOM crash"
-    await db_session.flush()
+    # Media record is deleted.
+    media = await db_session.get(Media, UUID(upload_data["media_id"]))
+    assert media is None
 
-    # 3. Confirming again resets state and re-enqueues the job
-    r2 = await async_client.post(
-        f"/api/v1/media/{media_id}/confirm", headers=auth_headers
-    )
-    assert r2.status_code == 200
-
-    # Reload from DB
-    await db_session.refresh(media)
-    assert media.processing_status == MediaProcessingStatus.PENDING
-    assert media.processing_error is None
-    # Job was enqueued a second time
-    assert len(arq_pool.enqueued) == 2
-
-
-# ===========================================================================
-# GET /media/{id}
-# ===========================================================================
-
-
-@pytest.mark.asyncio
-async def test_get_pending_state(
-    async_client: AsyncClient,
-    auth_headers: dict[str, str],
-) -> None:
-    """PENDING media returns 200 with no read URLs."""
-    upload_data = await _request_upload(async_client, auth_headers)
-    response = await async_client.get(
-        f"/api/v1/media/{upload_data['media_id']}", headers=auth_headers
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["upload_status"] == "pending"
-    assert data["processing_status"] is None
-    assert data["read_url"] is None
-    assert data["thumbnail_url"] is None
-
-
-@pytest.mark.asyncio
-async def test_get_completed_state(
-    async_client: AsyncClient,
-    auth_headers: dict[str, str],
-    storage: InMemoryStorage,
-    db_session: AsyncSession,
-) -> None:
-    """COMPLETED media returns 200 with signed read URLs."""
-    from sqlalchemy import select
-
-    upload_data = await _request_upload(async_client, auth_headers)
-    media_id = UUID(upload_data["media_id"])
-
-    # Manually force to COMPLETED state.
-    result = await db_session.execute(select(Media).where(Media.id == media_id))
-    media = result.scalar_one()
-    await _put_file(async_client, storage, media.storage_key)
-    thumbnail_key = f"thumbnails/{media.storage_key}"
-    await storage.upload(thumbnail_key, b"thumb", "image/jpeg")
-    media.upload_status = MediaUploadStatus.UPLOADED
-    media.processing_status = MediaProcessingStatus.COMPLETED
-    media.thumbnail_key = thumbnail_key
-    media.width = 800
-    media.height = 600
-    media.processed_at = datetime.now(UTC)
-    await db_session.flush()
-
-    response = await async_client.get(f"/api/v1/media/{media_id}", headers=auth_headers)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["processing_status"] == "completed"
-    assert data["read_url"] is not None
-    assert data["thumbnail_url"] is not None
-    assert data["width"] == 800
-    assert data["height"] == 600
-
-
-@pytest.mark.asyncio
-async def test_get_wrong_user_returns_404(
-    async_client: AsyncClient,
-    auth_headers: dict[str, str],
-) -> None:
-    """Getting another user's media returns 404."""
-    upload_data = await _request_upload(async_client, auth_headers)
-
-    reg2 = await async_client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": f"get-other-{uuid.uuid4().hex[:6]}@example.com",
-            "password": "Test1234!secure",
-            "display_name": "Other",
-        },
-    )
-    login2 = await async_client.post(
-        "/api/v1/auth/login",
-        json={
-            "email": reg2.json()["email"],
-            "password": "Test1234!secure",
-            "installation_id": str(uuid.uuid4()),
-            "device_name": "D",
-            "platform": "web",
-        },
-    )
-    other_headers = {"Cookie": login2.headers["set-cookie"].split(";")[0]}
-
-    response = await async_client.get(
-        f"/api/v1/media/{upload_data['media_id']}", headers=other_headers
-    )
-    assert response.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_get_not_found(
-    async_client: AsyncClient,
-    auth_headers: dict[str, str],
-) -> None:
-    """Non-existent media_id returns 404."""
-    response = await async_client.get(
-        f"/api/v1/media/{uuid.uuid4()}", headers=auth_headers
-    )
-    assert response.status_code == 404
-
-
-# ===========================================================================
-# DELETE /media/{id}
-# ===========================================================================
-
-
-@pytest.mark.asyncio
-async def test_delete_success(
-    async_client: AsyncClient,
-    auth_headers: dict[str, str],
-    storage: InMemoryStorage,
-    db_session: AsyncSession,
-) -> None:
-    """Delete removes the DB row and the storage object."""
-    from sqlalchemy import select
-
-    upload_data = await _request_upload(async_client, auth_headers)
-    media_id = UUID(upload_data["media_id"])
-    result = await db_session.execute(select(Media).where(Media.id == media_id))
-    media = result.scalar_one()
-    await _put_file(async_client, storage, media.storage_key)
-    storage_key = media.storage_key
-
-    response = await async_client.delete(
-        f"/api/v1/media/{media_id}", headers=auth_headers
-    )
-    assert response.status_code == 204
-
-    # Storage object gone.
+    # Storage object is also deleted.
     assert not await storage.object_exists(storage_key)
 
-    # DB row gone (evict SQLAlchemy identity cache first).
-    db_session.expire_all()
-    result2 = await db_session.execute(select(Media).where(Media.id == media_id))
-    assert result2.scalar_one_or_none() is None
-
 
 @pytest.mark.asyncio
-async def test_delete_also_removes_thumbnail(
-    async_client: AsyncClient,
-    auth_headers: dict[str, str],
-    storage: InMemoryStorage,
-    db_session: AsyncSession,
-) -> None:
-    """Delete removes both the main object and the thumbnail from storage."""
-    from sqlalchemy import select
-
-    upload_data = await _request_upload(async_client, auth_headers)
-    media_id = UUID(upload_data["media_id"])
-    result = await db_session.execute(select(Media).where(Media.id == media_id))
-    media = result.scalar_one()
-
-    await _put_file(async_client, storage, media.storage_key)
-    thumb_key = f"thumbnails/{media.storage_key}"
-    await storage.upload(thumb_key, b"thumbnail", "image/jpeg")
-    media.thumbnail_key = thumb_key
-    await db_session.flush()
-
-    response = await async_client.delete(
-        f"/api/v1/media/{media_id}", headers=auth_headers
-    )
-    assert response.status_code == 204
-    assert not await storage.object_exists(media.storage_key)
-    assert not await storage.object_exists(thumb_key)
-
-
-@pytest.mark.asyncio
-async def test_delete_wrong_user(
-    async_client: AsyncClient,
-    auth_headers: dict[str, str],
-) -> None:
-    """Deleting another user's media returns 404."""
-    upload_data = await _request_upload(async_client, auth_headers)
-
-    reg2 = await async_client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": f"del-other-{uuid.uuid4().hex[:6]}@example.com",
-            "password": "Test1234!secure",
-            "display_name": "Other",
-        },
-    )
-    login2 = await async_client.post(
-        "/api/v1/auth/login",
-        json={
-            "email": reg2.json()["email"],
-            "password": "Test1234!secure",
-            "installation_id": str(uuid.uuid4()),
-            "device_name": "D",
-            "platform": "web",
-        },
-    )
-    other_headers = {"Cookie": login2.headers["set-cookie"].split(";")[0]}
-
-    response = await async_client.delete(
-        f"/api/v1/media/{upload_data['media_id']}", headers=other_headers
-    )
-    assert response.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_delete_not_found(
-    async_client: AsyncClient,
-    auth_headers: dict[str, str],
-) -> None:
-    """Non-existent media_id returns 404."""
-    response = await async_client.delete(
-        f"/api/v1/media/{uuid.uuid4()}", headers=auth_headers
-    )
-    assert response.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_delete_no_storage_object_still_succeeds(
-    async_client: AsyncClient,
-    auth_headers: dict[str, str],
-) -> None:
-    """Delete succeeds even when the storage object was never uploaded (PENDING)."""
-    upload_data = await _request_upload(async_client, auth_headers)
-    # Do NOT put anything in storage — delete should still return 204.
-    response = await async_client.delete(
-        f"/api/v1/media/{upload_data['media_id']}", headers=auth_headers
-    )
-    assert response.status_code == 204
+async def test_avatar_remove_no_auth(async_client: AsyncClient) -> None:
+    """Unauthenticated delete returns 401."""
+    resp = await async_client.delete("/api/v1/users/me/avatar")
+    assert resp.status_code == 401

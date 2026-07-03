@@ -43,6 +43,33 @@ class MediaRepository(BaseRepository[Media]):
         )
         return result.scalar_one_or_none()
 
+    async def get_pending_avatar_upload(self, user_id: UUID) -> Media | None:
+        """Return the most recent pending avatar upload for a user.
+
+        Used by the avatar confirm endpoint so the client never needs to
+        pass a ``media_id`` — the server finds the pending upload itself
+        by querying on the ``avatars/`` storage key prefix.
+
+        Args:
+            user_id: The UUID of the owning user.
+
+        Returns:
+            The most recently created pending avatar Media record, or None.
+        """
+        from sqlalchemy import desc
+
+        result = await self._session.execute(
+            select(Media)
+            .where(
+                Media.user_id == str(user_id),
+                Media.upload_status == MediaUploadStatus.PENDING,
+                Media.storage_key.like("avatars/%"),
+            )
+            .order_by(desc(Media.created_at))
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
     async def claim_for_processing(self, media_id: UUID) -> bool:
         """Atomically transition processing_status from PENDING to PROCESSING.
 

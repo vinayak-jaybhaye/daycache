@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import pgvector
 import sqlalchemy as sa
 from alembic import op
-import pgvector
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.

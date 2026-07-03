@@ -10,7 +10,8 @@ from fastapi import APIRouter
 
 from app.api.v1.auth import router as auth_router
 from app.api.v1.health import router as health_router
-from app.api.v1.media import router as media_router
+
+# from app.api.v1.media import router as media_router  # unmounted — media is internal infrastructure
 from app.api.v1.settings import router as settings_router
 from app.api.v1.users import router as users_router
 
@@ -26,7 +27,7 @@ router.include_router(health_router, tags=["health"])
 router.include_router(auth_router, prefix="/auth", tags=["auth"])
 router.include_router(users_router, prefix="/users", tags=["users"])
 router.include_router(settings_router, prefix="/settings", tags=["settings"])
-router.include_router(media_router, prefix="/media", tags=["media"])
+# router.include_router(media_router, prefix="/media", tags=["media"])  # unmounted
 # router.include_router(journal_router, prefix="/journal", tags=["journal"])
 # router.include_router(search_router, prefix="/search", tags=["search"])
 # router.include_router(ai_router, prefix="/ai", tags=["ai"])

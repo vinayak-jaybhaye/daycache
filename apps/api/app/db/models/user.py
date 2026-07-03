@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, CheckConstraint, ForeignKey, SmallInteger, Text, Time
 from sqlalchemy.dialects.postgresql import CITEXT
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
@@ -30,7 +31,11 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     email: Mapped[str] = mapped_column(CITEXT, unique=True, nullable=False)
     display_name: Mapped[str] = mapped_column(Text, nullable=False)
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
-    avatar_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    avatar_media_id: Mapped[str | None] = mapped_column(
+        PGUUID(as_uuid=False),
+        ForeignKey("media.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationships
@@ -67,6 +72,7 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     media: Mapped[list[Media]] = relationship(
         "Media",
+        foreign_keys="[Media.user_id]",
         back_populates="user",
         cascade="all, delete-orphan",
     )

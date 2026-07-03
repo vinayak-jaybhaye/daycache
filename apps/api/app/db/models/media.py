@@ -85,7 +85,11 @@ class Media(UUIDMixin, TimestampMixin, Base):
     )
 
     # Relationships
-    user: Mapped[User] = relationship("User", back_populates="media")
+    user: Mapped[User] = relationship(
+        "User",
+        foreign_keys="[Media.user_id]",
+        back_populates="media",
+    )
     journal_entries: Mapped[list[JournalEntry]] = relationship(
         "JournalEntry",
         secondary="journal_media",

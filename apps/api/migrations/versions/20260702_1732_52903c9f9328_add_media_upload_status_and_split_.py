@@ -11,7 +11,6 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-import pgvector
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.

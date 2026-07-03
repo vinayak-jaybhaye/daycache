@@ -232,11 +232,39 @@ class MediaService:
         if media is None:
             raise NotFoundError("Media not found.")
 
-        # Delete storage objects before the DB row (best-effort).
-        for key in [media.storage_key, media.thumbnail_key]:
+        await MediaService.delete_media_by_id(db, storage, media.id)
+
+    @staticmethod
+    async def delete_media_by_id(
+        db: AsyncSession,
+        storage: StorageBackend,
+        media_id: UUID,
+    ) -> None:
+        """Delete a media record and all its associated S3 storage objects by ID.
+
+        Deletes the original S3 object, the thumbnail object (if set in DB), and
+        the default thumbnail path (thumbnails/{storage_key}) from storage,
+        before deleting the database row.
+
+        Args:
+            db: Active database session.
+            storage: Configured storage backend.
+            media_id: UUID of the media record to wipe out.
+        """
+        media = await db.get(Media, media_id)
+        if media is None:
+            return
+
+        # Gather keys to delete from storage.
+        keys = {
+            media.storage_key,
+            media.thumbnail_key,
+            f"thumbnails/{media.storage_key}",
+        }
+        for key in keys:
             if key is None:
                 continue
-            with contextlib.suppress(FileNotFoundError):
+            with contextlib.suppress(Exception):
                 await storage.delete(key)
 
         await db.delete(media)
