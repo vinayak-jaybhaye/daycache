@@ -16,6 +16,29 @@ from pydantic import BaseModel, Field
 from app.modules.tags.schemas import TagInfo
 
 
+class MoodResponse(BaseModel):
+    """Schema representing a predefined system mood."""
+
+    id: UUID
+    name: str
+    color: str
+
+    class Config:
+        from_attributes = True
+
+
+class EntryMoodResponse(BaseModel):
+    """Schema representing a mood linked to a specific journal entry."""
+
+    id: UUID
+    name: str
+    color: str
+    intensity: int
+
+    class Config:
+        from_attributes = True
+
+
 class DayResponse(BaseModel):
     """Schema representing daily aggregate metadata."""
 
@@ -78,6 +101,7 @@ class JournalEntryResponse(BaseModel):
 
     updated_at: datetime
     tags: list[TagInfo] = Field(default_factory=list)
+    moods: list[EntryMoodResponse] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
@@ -95,3 +119,10 @@ class LinkTagRequest(BaseModel):
     """Request schema for associating a tag with an entry."""
 
     tag_id: UUID = Field(..., description="The ID of the Tag to link")
+
+
+class LinkMoodRequest(BaseModel):
+    """Request schema for associating a mood with an entry."""
+
+    mood_id: UUID = Field(..., description="The ID of the Mood to link")
+    intensity: int = Field(5, ge=1, le=10, description="Mood intensity score (1-10)")

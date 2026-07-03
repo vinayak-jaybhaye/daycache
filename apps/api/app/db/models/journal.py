@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
@@ -68,7 +69,7 @@ class JournalEntry(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
 
     __tablename__ = "journal_entries"
 
-    day_id: Mapped[str] = mapped_column(
+    day_id: Mapped[UUID] = mapped_column(
         ForeignKey("days.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -87,7 +88,7 @@ class JournalEntry(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
         Integer, server_default=text("1"), default=1, nullable=False
     )
 
-    __mapper_args__: ClassVar[dict[str, Any]] = {"version_id_col": version}
+    __mapper_args__: dict[str, Any] = {"version_id_col": version}  # noqa: RUF012
 
     # Relationships
     day: Mapped[Day] = relationship("Day", back_populates="entries")

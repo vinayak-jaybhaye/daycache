@@ -479,3 +479,102 @@ async def test_journal_entry_tag_association(
     get_res_2 = await async_client.get(f"/api/v1/entries/{entry_id}")
     assert get_res_2.status_code == 200
     assert len(get_res_2.json()["tags"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_list_moods(async_client: AsyncClient, db_session: AsyncSession) -> None:
+    """GET /moods returns the full seeded mood catalog without requiring auth."""
+    res = await async_client.get("/api/v1/moods")
+    assert res.status_code == 200
+    moods = res.json()
+
+    # All 16 predefined moods should be returned
+    assert len(moods) == 16
+
+    # Ordered by name ascending
+    names = [m["name"] for m in moods]
+    assert names == sorted(names)
+
+    # Spot-check first mood
+    first = moods[0]
+    assert first["name"] == "angry"
+    assert first["color"] == "#EF5350"
+
+
+@pytest.mark.asyncio
+async def test_entry_mood_association(
+    async_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Verify linking and unlinking moods to/from journal entries via sub-resource endpoints."""
+    # 1. Register & login
+    email = "mood-assoc@example.com"
+    await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "password123", "display_name": "Moody"},
+    )
+    await async_client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": "password123",
+            "installation_id": "mood-d",
+            "platform": "web",
+        },
+    )
+
+    # 2. Fetch the mood catalog and pick "happy"
+    moods_res = await async_client.get("/api/v1/moods")
+    assert moods_res.status_code == 200
+    moods = moods_res.json()
+    happy = next(m for m in moods if m["name"] == "happy")
+    mood_id = happy["id"]
+
+    # 3. Create a journal entry
+    entry_res = await async_client.post(
+        "/api/v1/entries",
+        json={
+            "date": "2026-07-04",
+            "title": "A great day",
+            "content": {},
+            "is_favorite": False,
+        },
+    )
+    assert entry_res.status_code == 201
+    entry_id = entry_res.json()["id"]
+    assert len(entry_res.json()["moods"]) == 0
+
+    # 4. Attach mood with intensity 8
+    link_res = await async_client.post(
+        f"/api/v1/entries/{entry_id}/moods",
+        json={"mood_id": mood_id, "intensity": 8},
+    )
+    assert link_res.status_code == 204
+
+    # Verify mood appears on the entry with correct intensity
+    get_res = await async_client.get(f"/api/v1/entries/{entry_id}")
+    assert get_res.status_code == 200
+    entry_moods = get_res.json()["moods"]
+    assert len(entry_moods) == 1
+    assert entry_moods[0]["id"] == mood_id
+    assert entry_moods[0]["name"] == "happy"
+    assert entry_moods[0]["intensity"] == 8
+
+    # 5. Update intensity via re-link (upsert)
+    relink_res = await async_client.post(
+        f"/api/v1/entries/{entry_id}/moods",
+        json={"mood_id": mood_id, "intensity": 3},
+    )
+    assert relink_res.status_code == 204
+
+    get_res2 = await async_client.get(f"/api/v1/entries/{entry_id}")
+    assert get_res2.json()["moods"][0]["intensity"] == 3
+
+    # 6. Detach mood
+    unlink_res = await async_client.delete(
+        f"/api/v1/entries/{entry_id}/moods/{mood_id}"
+    )
+    assert unlink_res.status_code == 204
+
+    get_res3 = await async_client.get(f"/api/v1/entries/{entry_id}")
+    assert get_res3.status_code == 200
+    assert len(get_res3.json()["moods"]) == 0

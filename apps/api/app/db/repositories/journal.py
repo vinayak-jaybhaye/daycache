@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.db.models.journal import Day, JournalEntry
+from app.db.models.mood import EntryMood
 from app.db.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
@@ -99,7 +100,11 @@ class JournalRepository(BaseRepository[JournalEntry]):
         stmt = (
             select(JournalEntry)
             .join(Day, JournalEntry.day_id == Day.id)
-            .options(selectinload(JournalEntry.tags), joinedload(JournalEntry.day))
+            .options(
+                selectinload(JournalEntry.tags),
+                selectinload(JournalEntry.moods).joinedload(EntryMood.mood),
+                joinedload(JournalEntry.day),
+            )
         )
 
         # Standard filters
@@ -161,3 +166,31 @@ class JournalRepository(BaseRepository[JournalEntry]):
         items = result.scalars().all()
 
         return items, total
+
+    async def get_entry_by_id(
+        self, entry_id: UUID, user_id: UUID
+    ) -> JournalEntry | None:
+        """Fetch a single journal entry by ID with tags and moods eager-loaded.
+
+        Args:
+            entry_id: The UUID of the JournalEntry.
+            user_id: The UUID of the owning user.
+
+        Returns:
+            The entry instance with relationships populated, or None if not found.
+        """
+        stmt = (
+            select(JournalEntry)
+            .join(Day, JournalEntry.day_id == Day.id)
+            .options(
+                selectinload(JournalEntry.tags),
+                selectinload(JournalEntry.moods).joinedload(EntryMood.mood),
+            )
+            .where(
+                JournalEntry.id == entry_id,
+                Day.user_id == user_id,
+                JournalEntry.deleted_at.is_(None),
+            )
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()

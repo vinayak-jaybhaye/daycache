@@ -32,9 +32,7 @@ def upgrade() -> None:
     op.create_table(
         "moods",
         sa.Column("name", sa.Text(), nullable=False),
-        sa.Column("emoji", sa.Text(), nullable=False),
         sa.Column("color", sa.Text(), nullable=False),
-        sa.Column("sort_order", sa.Integer(), nullable=False),
         sa.Column(
             "id", sa.Uuid(), server_default=sa.text("gen_random_uuid()"), nullable=False
         ),

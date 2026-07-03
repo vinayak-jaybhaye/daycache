@@ -16,7 +16,9 @@ from app.modules.journal.schemas import (
     JournalEntryCreate,
     JournalEntryResponse,
     JournalEntryUpdate,
+    LinkMoodRequest,
     LinkTagRequest,
+    MoodResponse,
     PaginatedJournalEntriesResponse,
 )
 from app.modules.journal.service import JournalService
@@ -26,6 +28,7 @@ if TYPE_CHECKING:
 
 entries_router = APIRouter()
 days_router = APIRouter()
+moods_router = APIRouter()
 
 
 # ==========================================
@@ -196,3 +199,63 @@ async def update_day(
 ) -> DayResponse:
     """Update location or weather metadata context for a calendar date."""
     return await JournalService.update_day(db, current_user.id, date, data)
+
+
+# ==========================================
+# Mood Catalog Router Endpoints
+# ==========================================
+
+
+@moods_router.get(
+    "",
+    response_model=list[MoodResponse],
+)
+async def list_moods(
+    db: AsyncSession = Depends(get_db),
+) -> list[MoodResponse]:
+    """Retrieve the full predefined mood catalog ordered by name."""
+    return await JournalService.list_moods(db)
+
+
+# ==========================================
+# Entry ↔ Mood Sub-resource Endpoints
+# ==========================================
+
+
+@entries_router.post(
+    "/{id}/moods",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def add_mood_to_entry(
+    id: UUID,
+    data: LinkMoodRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Associate a mood with a journal entry."""
+    await JournalService.add_mood_to_entry(
+        db=db,
+        user_id=current_user.id,
+        entry_id=id,
+        mood_id=data.mood_id,
+        intensity=data.intensity,
+    )
+
+
+@entries_router.delete(
+    "/{id}/moods/{mood_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_mood_from_entry(
+    id: UUID,
+    mood_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Dissociate a mood from a journal entry."""
+    await JournalService.remove_mood_from_entry(
+        db=db,
+        user_id=current_user.id,
+        entry_id=id,
+        mood_id=mood_id,
+    )

@@ -14,7 +14,9 @@ from app.db.repositories.tag import TagRepository
 from app.exceptions import ConflictError, NotFoundError, UnprocessableError
 from app.modules.journal.schemas import (
     DayResponse,
+    EntryMoodResponse,
     JournalEntryResponse,
+    MoodResponse,
     PaginatedJournalEntriesResponse,
 )
 from app.modules.tags.schemas import TagInfo
@@ -151,9 +153,14 @@ class JournalService:
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
 
+        from app.db.models.mood import EntryMood
+
         stmt = (
             select(JournalEntry)
-            .options(selectinload(JournalEntry.tags))
+            .options(
+                selectinload(JournalEntry.tags),
+                selectinload(JournalEntry.moods).joinedload(EntryMood.mood),
+            )
             .where(JournalEntry.id == entry.id)
         )
         res = await db.execute(stmt)
@@ -171,6 +178,15 @@ class JournalService:
             created_at=entry.created_at,
             updated_at=entry.updated_at,
             tags=[TagInfo.model_validate(t) for t in entry.tags],
+            moods=[
+                EntryMoodResponse(
+                    id=m.mood.id,
+                    name=m.mood.name,
+                    color=m.mood.color,
+                    intensity=m.intensity,
+                )
+                for m in entry.moods
+            ],
         )
 
     @staticmethod
@@ -187,26 +203,10 @@ class JournalService:
         Returns:
             The JournalEntryResponse.
         """
-        day_repo = DayRepository(db)
-
-        # 1. Fetch entry with selectinloaded tags
-        from sqlalchemy import select
-        from sqlalchemy.orm import selectinload
-
-        stmt = (
-            select(JournalEntry)
-            .options(selectinload(JournalEntry.tags))
-            .where(JournalEntry.id == entry_id, JournalEntry.deleted_at.is_(None))
-        )
-        res = await db.execute(stmt)
-        entry = res.scalar_one_or_none()
+        repo = JournalRepository(db)
+        entry = await repo.get_entry_by_id(entry_id, user_id)
 
         if entry is None:
-            raise NotFoundError("Journal entry not found.")
-
-        # 2. Check ownership
-        day = await day_repo.get_by_id(entry.day_id)
-        if day is None or day.user_id != user_id:
             raise NotFoundError("Journal entry not found.")
 
         return JournalEntryResponse(
@@ -221,6 +221,15 @@ class JournalService:
             created_at=entry.created_at,
             updated_at=entry.updated_at,
             tags=[TagInfo.model_validate(t) for t in entry.tags],
+            moods=[
+                EntryMoodResponse(
+                    id=m.mood.id,
+                    name=m.mood.name,
+                    color=m.mood.color,
+                    intensity=m.intensity,
+                )
+                for m in entry.moods
+            ],
         )
 
     @staticmethod
@@ -290,6 +299,15 @@ class JournalService:
                     created_at=e.created_at,
                     updated_at=e.updated_at,
                     tags=[TagInfo.model_validate(t) for t in e.tags],
+                    moods=[
+                        EntryMoodResponse(
+                            id=m.mood.id,
+                            name=m.mood.name,
+                            color=m.mood.color,
+                            intensity=m.intensity,
+                        )
+                        for m in e.moods
+                    ],
                 )
                 for e in items
             ],
@@ -371,9 +389,14 @@ class JournalService:
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
 
+        from app.db.models.mood import EntryMood
+
         stmt = (
             select(JournalEntry)
-            .options(selectinload(JournalEntry.tags))
+            .options(
+                selectinload(JournalEntry.tags),
+                selectinload(JournalEntry.moods).joinedload(EntryMood.mood),
+            )
             .where(JournalEntry.id == entry_id)
         )
         res = await db.execute(stmt)
@@ -391,6 +414,15 @@ class JournalService:
             created_at=entry.created_at,
             updated_at=entry.updated_at,
             tags=[TagInfo.model_validate(t) for t in entry.tags],
+            moods=[
+                EntryMoodResponse(
+                    id=m.mood.id,
+                    name=m.mood.name,
+                    color=m.mood.color,
+                    intensity=m.intensity,
+                )
+                for m in entry.moods
+            ],
         )
 
     @staticmethod
@@ -550,3 +582,80 @@ class JournalService:
 
         # 3. Detach
         await j_tag_repo.delete_by_composite_id(entry_id, tag_id)
+
+    # ------------------------------------------------------------------
+    # Mood catalog
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def list_moods(db: AsyncSession) -> list[MoodResponse]:
+        """Return all predefined system moods ordered by name."""
+        from app.db.repositories.mood import MoodRepository
+
+        mood_repo = MoodRepository(db)
+        moods = await mood_repo.list_all()
+        return [MoodResponse.model_validate(m) for m in moods]
+
+    # ------------------------------------------------------------------
+    # Entry ↔ Mood sub-resource
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def add_mood_to_entry(
+        db: AsyncSession,
+        user_id: UUID,
+        entry_id: UUID,
+        mood_id: UUID,
+        intensity: int,
+    ) -> None:
+        """Attach a mood to a journal entry with a given intensity score."""
+        from app.db.models.mood import EntryMood
+        from app.db.repositories.entry_mood import EntryMoodRepository
+        from app.db.repositories.mood import MoodRepository
+
+        entry_mood_repo = EntryMoodRepository(db)
+        mood_repo = MoodRepository(db)
+
+        # 1. Verify entry ownership
+        is_owner = await entry_mood_repo.verify_entry_belongs_to_user(entry_id, user_id)
+        if not is_owner:
+            raise NotFoundError("Journal entry not found.")
+
+        # 2. Verify mood exists in the catalog
+        mood = await mood_repo.get_by_id(mood_id)
+        if mood is None:
+            raise NotFoundError("Mood not found.")
+
+        # 3. Upsert — update intensity if already linked, otherwise create
+        existing = await entry_mood_repo.get_by_composite_id(entry_id, mood_id)
+        if existing is None:
+            await entry_mood_repo.create(
+                EntryMood(
+                    journal_entry_id=entry_id,
+                    mood_id=mood_id,
+                    intensity=intensity,
+                )
+            )
+        else:
+            existing.intensity = intensity
+            await db.flush()
+
+    @staticmethod
+    async def remove_mood_from_entry(
+        db: AsyncSession,
+        user_id: UUID,
+        entry_id: UUID,
+        mood_id: UUID,
+    ) -> None:
+        """Detach a mood from a journal entry after verifying ownership."""
+        from app.db.repositories.entry_mood import EntryMoodRepository
+
+        entry_mood_repo = EntryMoodRepository(db)
+
+        # 1. Verify entry ownership
+        is_owner = await entry_mood_repo.verify_entry_belongs_to_user(entry_id, user_id)
+        if not is_owner:
+            raise NotFoundError("Journal entry not found.")
+
+        # 2. Detach (idempotent — no error if not linked)
+        await entry_mood_repo.delete_by_composite_id(entry_id, mood_id)

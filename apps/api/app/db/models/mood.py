@@ -8,7 +8,6 @@ from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
     Index,
-    Integer,
     SmallInteger,
     Text,
     UniqueConstraint,
@@ -27,9 +26,7 @@ class Mood(UUIDMixin, Base):
     __tablename__ = "moods"
 
     name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    emoji: Mapped[str] = mapped_column(Text, nullable=False)
     color: Mapped[str] = mapped_column(Text, nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class EntryMood(UUIDMixin, Base):
