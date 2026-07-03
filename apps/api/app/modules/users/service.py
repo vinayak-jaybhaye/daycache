@@ -202,7 +202,10 @@ class UserService:
         await db.flush()
 
         await arq_pool.enqueue_job(
-            "process_media", str(media.id), _job_id=str(media.id)
+            "process_media",
+            str(media.id),
+            _job_id=str(media.id),
+            _queue_name="media_processing_queue",
         )
 
         # Delete the previous avatar's storage objects before switching the

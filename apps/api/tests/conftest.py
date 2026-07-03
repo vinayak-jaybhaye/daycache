@@ -28,6 +28,8 @@ os.environ.setdefault(
     "postgresql+asyncpg://daycache:daycache@localhost:5432/daycache_test",
 )
 os.environ.setdefault("SECRET_KEY", "test-secret-key-that-is-long-enough-32chars!")
+os.environ.setdefault("AI_EMBEDDING_PROVIDER", "mock")
+os.environ.setdefault("AI_EMBEDDING_MODEL", "mock-model")
 
 from app.api.deps import get_db
 from app.main import app

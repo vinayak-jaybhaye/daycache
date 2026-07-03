@@ -326,6 +326,7 @@ async def test_avatar_confirm_success(
 
     assert len(arq_pool.enqueued) == 1
     assert arq_pool.enqueued[0][0] == "process_media"
+    assert arq_pool.enqueued[0][2].get("_queue_name") == "media_processing_queue"
 
 
 @pytest.mark.asyncio

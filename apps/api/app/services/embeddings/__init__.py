@@ -1,4 +1,7 @@
-"""Embeddings service placeholder.
+"""Embeddings service provider exports."""
 
-Implement this service when the embeddings feature is ready.
-"""
+from __future__ import annotations
+
+from app.services.embeddings.provider import EmbeddingGenerator
+
+__all__ = ["EmbeddingGenerator"]

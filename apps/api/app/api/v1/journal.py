@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 from datetime import date
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_arq_pool, get_current_user, get_db
 from app.db.models import User
 from app.modules.journal.schemas import (
     DayResponse,
@@ -24,6 +25,7 @@ from app.modules.journal.schemas import (
 from app.modules.journal.service import JournalService
 
 if TYPE_CHECKING:
+    from arq import ArqRedis
     from sqlalchemy.ext.asyncio import AsyncSession
 
 entries_router = APIRouter()
@@ -45,9 +47,18 @@ async def create_entry(
     data: JournalEntryCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    arq_pool: ArqRedis = Depends(get_arq_pool),
 ) -> JournalEntryResponse:
     """Create a new journal entry under the resolved Day aggregate."""
-    return await JournalService.create_entry(db, current_user.id, data)
+    entry = await JournalService.create_entry(db, current_user.id, data)
+    with contextlib.suppress(Exception):
+        await arq_pool.enqueue_job(
+            "process_journal_entry_embeddings",
+            str(entry.id),
+            entry.version,
+            _queue_name="embedding_queue",
+        )
+    return entry
 
 
 @entries_router.get(
@@ -99,9 +110,22 @@ async def update_entry(
     data: JournalEntryUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    arq_pool: ArqRedis = Depends(get_arq_pool),
 ) -> JournalEntryResponse:
     """Update metadata or rich text content of a journal entry with optimistic locking check."""
-    return await JournalService.update_entry(db, current_user.id, id, data)
+    entry = await JournalService.update_entry(db, current_user.id, id, data)
+
+    # Trigger background embedding processing if title or content text is updated
+    if data.title is not None or data.content is not None:
+        with contextlib.suppress(Exception):
+            await arq_pool.enqueue_job(
+                "process_journal_entry_embeddings",
+                str(entry.id),
+                entry.version,
+                _queue_name="embedding_queue",
+            )
+
+    return entry
 
 
 @entries_router.delete(

@@ -2,12 +2,12 @@
 
 Start workers with::
 
-    uv run arq app.workers.arq_settings.WorkerSettings
+    uv run arq app.workers.arq_settings.MediaWorkerSettings
 
 For multiple concurrent workers, launch multiple processes::
 
-    uv run arq app.workers.arq_settings.WorkerSettings &
-    uv run arq app.workers.arq_settings.WorkerSettings &
+    uv run arq app.workers.arq_settings.MediaWorkerSettings &
+    uv run arq app.workers.arq_settings.MediaWorkerSettings &
 
 Each process runs up to ``max_jobs`` coroutines simultaneously.
 """
@@ -21,6 +21,7 @@ from arq.connections import RedisSettings
 
 from app.core.config import get_settings
 from app.storage.factory import get_storage
+from app.workers.embedding import process_journal_entry_embeddings
 from app.workers.media import clean_stale_media, process_media
 
 
@@ -55,13 +56,11 @@ async def job_end(ctx: dict) -> None:  # type: ignore[type-arg]
         await db.close()
 
 
-class WorkerSettings:
-    """ARQ worker configuration.
-
-    See https://arq-docs.helpmanual.io/ for all available options.
-    """
+class MediaWorkerSettings:
+    """ARQ worker configuration for Media and general background jobs."""
 
     functions: ClassVar = [process_media]
+    queue_name = "media_processing_queue"
     cron_jobs: ClassVar = [
         cron(
             clean_stale_media,
@@ -75,8 +74,24 @@ class WorkerSettings:
     on_job_start = job_start
     on_job_end = job_end
 
-    # Maximum number of concurrent jobs per worker process.
-    # Scale horizontally by running more worker processes.
     max_jobs = 10
+    redis_settings = RedisSettings.from_dsn(str(get_settings().REDIS_URL))
 
+
+class EmbeddingWorkerSettings:
+    """ARQ worker configuration for Embedding generation background jobs.
+
+    Start worker with:
+        uv run arq app.workers.arq_settings.EmbeddingWorkerSettings
+    """
+
+    functions: ClassVar = [process_journal_entry_embeddings]
+    queue_name = "embedding_queue"
+
+    on_startup = startup
+    on_shutdown = shutdown
+    on_job_start = job_start
+    on_job_end = job_end
+
+    max_jobs = 10
     redis_settings = RedisSettings.from_dsn(str(get_settings().REDIS_URL))

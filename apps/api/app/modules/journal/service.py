@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy.orm.exc import StaleDataError
 
+from app.db.enums import EmbeddingStatus
 from app.db.models.journal import Day, JournalEntry
 from app.db.repositories.journal import DayRepository, JournalRepository
 from app.db.repositories.tag import TagRepository
@@ -358,14 +359,21 @@ class JournalService:
             raise ConflictError("The entry has been updated by another client.")
 
         # 4. Modify fields
-        if data.title is not None:
+        content_changed = False
+        if data.title is not None and data.title != entry.title:
             entry.title = data.title
+            content_changed = True
 
         if data.content is not None:
-            entry.content = data.content
             content_text = extract_text_from_rich_content(data.content)
-            entry.content_text = content_text
-            entry.word_count = len(content_text.split())
+            if content_text != entry.content_text:
+                entry.content = data.content
+                entry.content_text = content_text
+                entry.word_count = len(content_text.split())
+                content_changed = True
+
+        if content_changed:
+            entry.embedding_status = EmbeddingStatus.PENDING
 
         if data.is_favorite is not None:
             entry.is_favorite = data.is_favorite

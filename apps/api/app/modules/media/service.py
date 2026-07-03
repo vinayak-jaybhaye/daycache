@@ -170,7 +170,10 @@ class MediaService:
 
         # Enqueue the ARQ processing job.
         await arq_pool.enqueue_job(
-            "process_media", str(media_id), _job_id=str(media_id)
+            "process_media",
+            str(media_id),
+            _job_id=str(media_id),
+            _queue_name="media_processing_queue",
         )
 
         return await MediaService._build_status_response(media, storage, settings=None)

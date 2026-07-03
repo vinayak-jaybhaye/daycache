@@ -128,6 +128,15 @@ class Settings(BaseSettings):
     MEDIA_UPLOAD_TTL: int = 300  # presigned PUT URL lifetime in seconds
     MEDIA_READ_URL_TTL: int = 3600  # signed read URL lifetime in seconds
 
+    # ------------------------------------------------------------------
+    # AI Embeddings
+    # ------------------------------------------------------------------
+    AI_EMBEDDING_PROVIDER: Literal["mock", "openai", "gemini", "ollama"] = "mock"
+    AI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    OPENAI_API_KEY: SecretStr = SecretStr("")
+    GEMINI_API_KEY: SecretStr = SecretStr("")
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+
 
 @lru_cache
 def get_settings() -> Settings:
