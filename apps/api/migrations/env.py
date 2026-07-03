@@ -33,9 +33,7 @@ from app.core.config import get_settings  # noqa: E402
 DATABASE_URL = str(get_settings().DATABASE_URL)
 
 if not DATABASE_URL:
-    msg = (
-        "DATABASE_URL is not configured in Settings."
-    )
+    msg = "DATABASE_URL is not configured in Settings."
     raise RuntimeError(msg)
 
 

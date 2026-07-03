@@ -276,7 +276,9 @@ async def test_avatar_upload_png_uses_correct_extension(
     """PNG MIME type generates a .png storage key."""
     from uuid import UUID
 
-    data = await _request_avatar_upload(async_client, auth_headers, mime_type="image/png")
+    data = await _request_avatar_upload(
+        async_client, auth_headers, mime_type="image/png"
+    )
     media_id = UUID(data["media_id"])
 
     media = await db_session.get(Media, media_id)

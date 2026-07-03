@@ -37,7 +37,7 @@ repos:
       - id: prettier
         name: prettier
         language: node
-        entry: pnpm --filter @daycache/web prettier --write
+        entry: bash -c 'cd apps/web && pnpm exec prettier --write "${@#apps/web/}"' --
         types_or: [javascript, jsx, ts, tsx, css, json, markdown, yaml]
         files: ^apps/web/
         additional_dependencies: []
@@ -51,7 +51,7 @@ repos:
       - id: eslint
         name: eslint
         language: node
-        entry: pnpm --filter @daycache/web eslint --max-warnings 0
+        entry: bash -c 'cd apps/web && pnpm exec eslint --max-warnings 0 "${@#apps/web/}"' --
         types_or: [javascript, jsx, ts, tsx]
         files: ^apps/web/
         additional_dependencies: []
