@@ -21,9 +21,10 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm.exc import StaleDataError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.exceptions.base import AppException
+from app.exceptions.base import AppException, ConflictError
 from app.middleware.logging import get_request_id
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,18 @@ async def _app_exception_handler(request: Request, exc: AppException) -> JSONRes
         status_code=exc.status_code,
         content=_error_body(exc.code, exc.detail, request_id),
     )
+
+
+async def _stale_data_exception_handler(
+    request: Request, exc: StaleDataError
+) -> JSONResponse:
+    request_id = get_request_id()
+    logger.warning(
+        "Optimistic locking conflict: StaleDataError raised.",
+        extra={"request_id": request_id},
+    )
+    conflict_exc = ConflictError("The entry has been updated by another client.")
+    return await _app_exception_handler(request, conflict_exc)
 
 
 async def _http_exception_handler(
@@ -112,6 +125,7 @@ async def _unhandled_exception_handler(
 def register_exception_handlers(app: FastAPI) -> None:
     """Attach all global exception handlers to the FastAPI application."""
     app.add_exception_handler(AppException, _app_exception_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(StaleDataError, _stale_data_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(StarletteHTTPException, _http_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(RequestValidationError, _validation_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(Exception, _unhandled_exception_handler)

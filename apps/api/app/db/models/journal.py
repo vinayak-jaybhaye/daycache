@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlalchemy import (
     Boolean,
@@ -81,8 +81,13 @@ class JournalEntry(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     content_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     word_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     search_vector: Mapped[Any] = mapped_column(TSVECTOR, nullable=True)
-    is_draft: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    version: Mapped[int] = mapped_column(
+        Integer, server_default=text("1"), default=1, nullable=False
+    )
+
+    __mapper_args__: ClassVar[dict[str, Any]] = {"version_id_col": version}
 
     # Relationships
     day: Mapped[Day] = relationship("Day", back_populates="entries")

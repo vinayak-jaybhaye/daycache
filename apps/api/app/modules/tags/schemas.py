@@ -58,14 +58,19 @@ class TagUpdate(BaseModel):
         return v
 
 
-class TagResponse(BaseModel):
-    """Schema for tag response objects."""
+class TagInfo(BaseModel):
+    """Simplified tag schema for nested listings."""
 
     id: UUID
     name: str
     color: str
-    entry_count: int
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class TagResponse(TagInfo):
+    """Schema for tag response objects with entry counts."""
+
+    entry_count: int

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -187,11 +188,12 @@ async def test_logout_clears_cookie(
     settings = get_settings()
     cookie_name = settings.SESSION_COOKIE_NAME
 
-    email = "logout@example.com"
-    await async_client.post(
+    email = f"logout_{uuid.uuid4().hex[:8]}@example.com"
+    reg_res = await async_client.post(
         "/api/v1/auth/register",
         json={"email": email, "password": "password123", "display_name": "Logout User"},
     )
+    user_id = reg_res.json()["id"]
     await async_client.post(
         "/api/v1/auth/login",
         json={
@@ -212,7 +214,12 @@ async def test_logout_clears_cookie(
     )
     # Verify session remains in DB but has revoked_at set (soft-deleted)
     db_session.expire_all()
-    result = await db_session.execute(select(UserSession))
+    result = await db_session.execute(
+        select(UserSession)
+        .join(Device, UserSession.device_id == Device.id)
+        .where(Device.user_id == uuid.UUID(user_id))
+    )
+
     sessions = result.scalars().all()
     assert len(sessions) == 1
     assert sessions[0].revoked_at is not None
