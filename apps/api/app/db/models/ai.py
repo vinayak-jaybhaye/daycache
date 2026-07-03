@@ -71,6 +71,36 @@ class JournalChunk(UUIDMixin, Base):
     )
 
 
+def _get_embedding_dimension() -> int:
+    try:
+        import os
+
+        # Force mock dimensions (1536) for test database environments (bypassing settings cache)
+        db_url = os.environ.get("DATABASE_URL") or ""
+        if "test" in db_url:
+            return 1536
+
+        from app.core.config import get_settings
+
+        settings = get_settings()
+
+        provider = settings.AI_EMBEDDING_PROVIDER
+        if provider == "gemini":
+            return 768
+        elif provider == "ollama":
+            model = settings.AI_EMBEDDING_MODEL
+            if "nomic" in model or "768" in model:
+                return 768
+            elif "384" in model or "minilm" in model:
+                return 384
+            elif "1024" in model or "large" in model:
+                return 1024
+            return 768
+        return 1536
+    except Exception:
+        return 1536
+
+
 class Embedding(UUIDMixin, Base):
     """Vector embedding of a specific JournalChunk."""
 
@@ -86,7 +116,9 @@ class Embedding(UUIDMixin, Base):
     )
     provider: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding: Mapped[Any] = mapped_column(Vector(1536), nullable=False)
+    embedding: Mapped[Any] = mapped_column(
+        Vector(_get_embedding_dimension()), nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

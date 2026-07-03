@@ -9,6 +9,7 @@ from app.db.repositories.base import BaseRepository
 from app.db.repositories.collection import CollectionRepository
 from app.db.repositories.collection_entry import CollectionEntryRepository
 from app.db.repositories.device import DeviceRepository
+from app.db.repositories.embedding import EmbeddingRepository
 from app.db.repositories.entry_mood import EntryMoodRepository
 from app.db.repositories.journal import DayRepository, JournalRepository
 from app.db.repositories.journal_tag import JournalTagRepository
@@ -25,6 +26,7 @@ __all__ = [
     "CollectionRepository",
     "DayRepository",
     "DeviceRepository",
+    "EmbeddingRepository",
     "EntryMoodRepository",
     "JournalRepository",
     "JournalTagRepository",

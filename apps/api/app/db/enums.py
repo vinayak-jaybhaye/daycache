@@ -59,3 +59,12 @@ class SummaryKind(StrEnum):
     """AI output variations for content synthesis."""
 
     SUMMARY = "summary"
+
+
+class EmbeddingStatus(StrEnum):
+    """Lifecycle status of AI embeddings generation."""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"

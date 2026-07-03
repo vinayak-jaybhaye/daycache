@@ -16,10 +16,14 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy import (
+    Enum as SQLEnum,
+)
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
+from app.db.enums import EmbeddingStatus
 
 if TYPE_CHECKING:
     from app.db.models.ai import JournalChunk, Summary
@@ -84,6 +88,13 @@ class JournalEntry(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     word_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     search_vector: Mapped[Any] = mapped_column(TSVECTOR, nullable=True)
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    embedding_status: Mapped[EmbeddingStatus | None] = mapped_column(
+        SQLEnum(
+            "pending", "processing", "completed", "failed", name="embedding_status"
+        ),
+        default=EmbeddingStatus.PENDING,
+        nullable=True,
+    )
 
     version: Mapped[int] = mapped_column(
         Integer, server_default=text("1"), default=1, nullable=False

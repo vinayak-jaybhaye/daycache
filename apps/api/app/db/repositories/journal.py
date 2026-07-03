@@ -194,3 +194,23 @@ class JournalRepository(BaseRepository[JournalEntry]):
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_entry_for_ai(self, entry_id: UUID) -> JournalEntry | None:
+        """Fetch a single journal entry by ID with its Day relationship loaded.
+
+        Args:
+            entry_id: The UUID of the JournalEntry.
+
+        Returns:
+            The entry instance, or None if not found.
+        """
+        stmt = (
+            select(JournalEntry)
+            .options(joinedload(JournalEntry.day))
+            .where(
+                JournalEntry.id == entry_id,
+                JournalEntry.deleted_at.is_(None),
+            )
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
