@@ -210,7 +210,6 @@ async def test_logout_clears_cookie(
         cookie_name not in async_client.cookies
         or async_client.cookies[cookie_name] == ""
     )
-
     # Verify session remains in DB but has revoked_at set (soft-deleted)
     db_session.expire_all()
     result = await db_session.execute(select(UserSession))

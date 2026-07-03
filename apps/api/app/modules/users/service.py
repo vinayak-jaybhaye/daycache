@@ -54,7 +54,10 @@ class UserService:
 
         if user.avatar_media_id:
             media: Media | None = await db.get(Media, user.avatar_media_id)
-            if media is not None and media.processing_status == MediaProcessingStatus.COMPLETED:
+            if (
+                media is not None
+                and media.processing_status == MediaProcessingStatus.COMPLETED
+            ):
                 thumbnail_key = f"thumbnails/{media.storage_key}"
                 avatar_url = await storage.get_url(thumbnail_key, expires_in=url_ttl)
 
@@ -213,7 +216,9 @@ class UserService:
         return user
 
     @staticmethod
-    async def remove_avatar(db: AsyncSession, user: User, storage: StorageBackend) -> User:
+    async def remove_avatar(
+        db: AsyncSession, user: User, storage: StorageBackend
+    ) -> User:
         """Clear the user's avatar reference and delete its storage objects.
 
         Deletes the media record and both the original and thumbnail objects
