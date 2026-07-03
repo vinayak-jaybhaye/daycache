@@ -1,4 +1,4 @@
-"""alter embedding column type to unconstrained vector
+"""alter embedding column type to 768-dimensional vector
 
 Revision ID: 0411c9ce868b
 Revises: 70c94d9cd39c
@@ -19,50 +19,21 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def _get_embedding_dimension() -> int:
-    try:
-        import os
-
-        # Force mock dimensions (1536) for test database environments (bypassing settings cache)
-        db_url = os.environ.get("DATABASE_URL") or ""
-        if "test" in db_url:
-            return 1536
-
-        from app.core.config import get_settings
-
-        settings = get_settings()
-        provider = settings.AI_EMBEDDING_PROVIDER
-        if provider == "gemini":
-            return 768
-        elif provider == "ollama":
-            model = settings.AI_EMBEDDING_MODEL
-            if "nomic" in model or "768" in model:
-                return 768
-            elif "384" in model or "minilm" in model:
-                return 384
-            elif "1024" in model or "large" in model:
-                return 1024
-            return 768
-        return 1536
-    except Exception:
-        return 1536
-
-
 def upgrade() -> None:
-    dim = _get_embedding_dimension()
-
     # Drop index since it locks the dimension size to 1536
+    # Drop the IVFFlat index before changing the vector dimension.
+    # Vector indexes are tied to the embedding dimension and must be recreated.
     op.drop_index("idx_embeddings_vector", table_name="embeddings")
 
-    # Alter column to unconstrained vector
+    # Alter column to 768-dimensional vector
     op.alter_column(
         "embeddings",
         "embedding",
-        type_=pgvector.sqlalchemy.VECTOR(dim),
+        type_=pgvector.sqlalchemy.VECTOR(768),
         existing_type=pgvector.sqlalchemy.VECTOR(1536),
     )
 
-    # Recreate the index on the unconstrained column
+    # Recreate the index on the 768-dimensional column
     op.create_index(
         "idx_embeddings_vector",
         "embeddings",
@@ -75,8 +46,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    dim = _get_embedding_dimension()
-
     op.drop_index("idx_embeddings_vector", table_name="embeddings")
 
     # Revert to vector(1536)
@@ -84,7 +53,7 @@ def downgrade() -> None:
         "embeddings",
         "embedding",
         type_=pgvector.sqlalchemy.VECTOR(1536),
-        existing_type=pgvector.sqlalchemy.VECTOR(dim),
+        existing_type=pgvector.sqlalchemy.VECTOR(768),
     )
 
     # Recreate the 1536-dimensional index

@@ -319,7 +319,7 @@ class JournalService:
     @staticmethod
     async def update_entry(
         db: AsyncSession, user_id: UUID, entry_id: UUID, data: JournalEntryUpdate
-    ) -> JournalEntryResponse:
+    ) -> tuple[JournalEntryResponse, bool]:
         """Update properties of an existing entry with optimistic locking check.
 
         Args:
@@ -410,27 +410,30 @@ class JournalService:
         res = await db.execute(stmt)
         entry = res.scalar_one()
 
-        return JournalEntryResponse(
-            id=entry.id,
-            day_id=entry.day_id,
-            title=entry.title,
-            content=entry.content,
-            content_text=entry.content_text,
-            word_count=entry.word_count,
-            is_favorite=entry.is_favorite,
-            version=entry.version,
-            created_at=entry.created_at,
-            updated_at=entry.updated_at,
-            tags=[TagInfo.model_validate(t) for t in entry.tags],
-            moods=[
-                EntryMoodResponse(
-                    id=m.mood.id,
-                    name=m.mood.name,
-                    color=m.mood.color,
-                    intensity=m.intensity,
-                )
-                for m in entry.moods
-            ],
+        return (
+            JournalEntryResponse(
+                id=entry.id,
+                day_id=entry.day_id,
+                title=entry.title,
+                content=entry.content,
+                content_text=entry.content_text,
+                word_count=entry.word_count,
+                is_favorite=entry.is_favorite,
+                version=entry.version,
+                created_at=entry.created_at,
+                updated_at=entry.updated_at,
+                tags=[TagInfo.model_validate(t) for t in entry.tags],
+                moods=[
+                    EntryMoodResponse(
+                        id=m.mood.id,
+                        name=m.mood.name,
+                        color=m.mood.color,
+                        intensity=m.intensity,
+                    )
+                    for m in entry.moods
+                ],
+            ),
+            content_changed,
         )
 
     @staticmethod

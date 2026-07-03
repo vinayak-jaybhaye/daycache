@@ -26,7 +26,7 @@ class EmbeddingProvider(Protocol):
 class MockEmbeddingProvider:
     """Mock provider for local testing and CI runs."""
 
-    def __init__(self, dimension: int = 1536) -> None:
+    def __init__(self, dimension: int = 768) -> None:
         self._dimension = dimension
 
     @property
@@ -161,9 +161,7 @@ def get_embedding_provider() -> EmbeddingProvider:
             model=settings.AI_EMBEDDING_MODEL,
         )
     else:
-        from app.db.models.ai import _get_embedding_dimension
-
-        return MockEmbeddingProvider(dimension=_get_embedding_dimension())
+        return MockEmbeddingProvider(dimension=768)
 
 
 class EmbeddingGenerator:
@@ -188,3 +186,14 @@ class EmbeddingGenerator:
         if not texts:
             return []
         return list(await asyncio.gather(*(self.generate(text) for text in texts)))
+
+
+_generator: EmbeddingGenerator | None = None
+
+
+def get_embedding_generator() -> EmbeddingGenerator:
+    """Return a cached singleton instance of the unified embedding generator."""
+    global _generator
+    if _generator is None:
+        _generator = EmbeddingGenerator()
+    return _generator

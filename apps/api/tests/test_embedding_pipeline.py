@@ -133,7 +133,7 @@ async def test_embedding_pipeline_success(custom_db_session: AsyncSession) -> No
     assert len(chunk.embeddings) == 1
     emb = chunk.embeddings[0]
     assert emb.provider == "mock"
-    assert len(emb.embedding) == 1536
+    assert len(emb.embedding) == 768
 
 
 @pytest.mark.asyncio
