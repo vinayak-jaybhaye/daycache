@@ -114,6 +114,12 @@ jobs:
       - name: Sync dependencies
         run: uv sync
 
+      - name: Run database migrations
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql+asyncpg://daycache:daycache@localhost:5432/daycache_test
+        run: uv run alembic upgrade head
+
       - name: Run tests
         working-directory: apps/api
         env:

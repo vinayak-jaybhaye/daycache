@@ -268,13 +268,16 @@ def _compute_blurhash(data: bytes) -> str:
         A blurhash string.
     """
     import io
+    import warnings
 
     import blurhash  # type: ignore[import-untyped]
     from PIL import Image  # type: ignore[import-untyped]
 
     with Image.open(io.BytesIO(data)) as img:
         img = img.convert("RGB")
-        return blurhash.encode(img, 4, 3)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=DeprecationWarning)
+            return blurhash.encode(img, 4, 3)
 
 
 def _generate_thumbnail(data: bytes, mime_type: str, max_size: int = 400) -> bytes:

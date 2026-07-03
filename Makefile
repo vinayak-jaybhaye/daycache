@@ -67,14 +67,16 @@ type-check: ## Run Pyright (Python) and tsc (TypeScript)
 # Tests
 # ---------------------------------------------------------------------------
 
+TEST_DATABASE_URL ?= postgresql+asyncpg://daycache:daycache@localhost:5433/daycache_test
+
 test: ## Run all tests
-	$(UV_API) pytest
+	$(UV_API) env DATABASE_URL="$(TEST_DATABASE_URL)" pytest
 
 test.api: ## Run API tests only
-	$(UV_API) pytest tests/ -v
+	$(UV_API) env DATABASE_URL="$(TEST_DATABASE_URL)" pytest tests/ -v
 
 test.watch: ## Run API tests in watch mode
-	$(UV_API) pytest tests/ -v --tb=short -p no:cacheprovider
+	$(UV_API) env DATABASE_URL="$(TEST_DATABASE_URL)" pytest tests/ -v --tb=short -p no:cacheprovider
 
 # ---------------------------------------------------------------------------
 # Database
