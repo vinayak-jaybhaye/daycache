@@ -73,6 +73,11 @@ jobs:
   test:
     name: Test (pytest)
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql+asyncpg://daycache:daycache@localhost:5432/daycache_test
+      REDIS_URL: redis://localhost:6379/0
+      API_SECRET_KEY: test-secret-key-that-is-long-enough-32chars!
+
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -118,6 +123,8 @@ jobs:
         working-directory: apps/api
         env:
           DATABASE_URL: postgresql+asyncpg://daycache:daycache@localhost:5432/daycache_test
+          REDIS_URL: redis://localhost:6379/0
+          API_SECRET_KEY: test-secret-key-that-is-long-enough-32chars!
         run: uv run alembic upgrade head
 
       - name: Run tests
@@ -125,4 +132,5 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://daycache:daycache@localhost:5432/daycache_test
           REDIS_URL: redis://localhost:6379/0
+          API_SECRET_KEY: test-secret-key-that-is-long-enough-32chars!
         run: uv run pytest --tb=short
