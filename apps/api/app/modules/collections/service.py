@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from app.db.models.organization import Collection, CollectionEntry
+from app.db.models.collection import Collection, CollectionEntry
 from app.db.repositories.collection import CollectionRepository
 from app.db.repositories.collection_entry import CollectionEntryRepository
 from app.exceptions import ConflictError, NotFoundError

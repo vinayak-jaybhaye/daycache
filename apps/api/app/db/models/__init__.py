@@ -9,10 +9,11 @@ from __future__ import annotations
 from app.db.base import Base
 from app.db.models.ai import Embedding, JournalChunk, Summary
 from app.db.models.auth import Device, OAuthAccount, Session
+from app.db.models.collection import Collection, CollectionEntry
 from app.db.models.journal import Day, JournalEntry
 from app.db.models.media import JournalMedia, Media
 from app.db.models.mood import EntryMood, Mood
-from app.db.models.organization import Collection, CollectionEntry, JournalTag, Tag
+from app.db.models.tag import JournalTag, Tag
 from app.db.models.user import User, UserSettings
 
 __all__ = [

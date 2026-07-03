@@ -533,7 +533,7 @@ class JournalService:
         tag_id: UUID,
     ) -> None:
         """Attach a tag to a journal entry after verifying ownership."""
-        from app.db.models.organization import JournalTag
+        from app.db.models.tag import JournalTag
         from app.db.repositories.journal_tag import JournalTagRepository
         from app.db.repositories.tag import TagRepository
 

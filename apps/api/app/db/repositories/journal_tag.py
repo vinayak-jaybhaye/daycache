@@ -8,7 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.journal import Day, JournalEntry
-from app.db.models.organization import JournalTag
+from app.db.models.tag import JournalTag
 from app.db.repositories.base import BaseRepository
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from app.db.models.organization import Tag
+from app.db.models.tag import Tag
 from app.db.repositories.tag import TagRepository
 from app.exceptions import ConflictError, NotFoundError
 from app.modules.tags.schemas import TagResponse

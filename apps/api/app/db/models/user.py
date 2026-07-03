@@ -15,9 +15,10 @@ from app.db.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 if TYPE_CHECKING:
     from app.db.models.ai import Embedding, Summary
     from app.db.models.auth import Device, OAuthAccount
+    from app.db.models.collection import Collection
     from app.db.models.journal import Day
     from app.db.models.media import Media
-    from app.db.models.organization import Collection, Tag
+    from app.db.models.tag import Tag
 
 
 class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):

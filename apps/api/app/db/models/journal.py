@@ -23,9 +23,10 @@ from app.db.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from app.db.models.ai import JournalChunk, Summary
+    from app.db.models.collection import Collection
     from app.db.models.media import Media
     from app.db.models.mood import EntryMood
-    from app.db.models.organization import Collection, Tag
+    from app.db.models.tag import Tag
     from app.db.models.user import User
 
 

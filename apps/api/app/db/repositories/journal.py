@@ -117,7 +117,7 @@ class JournalRepository(BaseRepository[JournalEntry]):
 
         # Conditional tag mapping filter
         if tag_id is not None:
-            from app.db.models.organization import JournalTag
+            from app.db.models.tag import JournalTag
 
             count_stmt = count_stmt.join(
                 JournalTag, JournalEntry.id == JournalTag.journal_entry_id
@@ -127,7 +127,7 @@ class JournalRepository(BaseRepository[JournalEntry]):
 
         # Conditional collection mapping filter
         if collection_id is not None:
-            from app.db.models.organization import CollectionEntry
+            from app.db.models.collection import CollectionEntry
 
             count_stmt = count_stmt.join(
                 CollectionEntry, JournalEntry.id == CollectionEntry.journal_entry_id

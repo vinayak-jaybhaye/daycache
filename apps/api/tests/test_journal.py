@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.journal import Day, JournalEntry
-from app.db.models.organization import Tag
+from app.db.models.tag import Tag
 from app.main import app
 
 

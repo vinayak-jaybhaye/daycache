@@ -7,8 +7,8 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.collection import CollectionEntry
 from app.db.models.journal import Day, JournalEntry
-from app.db.models.organization import CollectionEntry
 from app.db.repositories.base import BaseRepository
 
 
