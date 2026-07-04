@@ -67,7 +67,7 @@ type-check: ## Run Pyright (Python) and tsc (TypeScript)
 # Tests
 # ---------------------------------------------------------------------------
 
-TEST_DATABASE_URL ?= postgresql+asyncpg://daycache:daycache@localhost:5433/daycache_test
+TEST_DATABASE_URL ?= postgresql+asyncpg://daycache:daycache@localhost:5432/daycache_test
 
 test: ## Run all tests
 	$(UV_API) env DATABASE_URL="$(TEST_DATABASE_URL)" pytest
