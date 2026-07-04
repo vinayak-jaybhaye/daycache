@@ -6,7 +6,7 @@ import os
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -308,30 +308,25 @@ async def test_embedding_pipeline_failure_rollback(
 
 @pytest.mark.asyncio
 async def test_ollama_embedding_provider() -> None:
-    """Test Ollama embedding provider behavior using mock HTTP responses."""
+    """Test Ollama embedding provider behavior using mock SDK responses."""
     from app.services.embeddings.provider import OllamaEmbeddingProvider
 
     provider = OllamaEmbeddingProvider(
-        base_url="http://localhost:11434", model="nomic-embed-text"
+        base_url="http://localhost:11434", model="nomic-embed-text", dimension=5
     )
-    assert provider.dimension == 768
+    assert provider.dimension == 5
 
     fake_embedding = [0.1, 0.2, 0.3, 0.4, 0.5]
 
-    async def mock_post(*args: Any, **kwargs: Any) -> Any:
-        class FakeResponse:
-            def raise_for_status(self) -> None:
-                pass
+    mock_response = MagicMock()
+    mock_response.embeddings = [fake_embedding]
 
-            def json(self) -> dict[str, Any]:
-                return {"embedding": fake_embedding}
-
-        return FakeResponse()
-
-    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+    with patch.object(
+        provider._client, "embed", return_value=mock_response
+    ) as mock_embed:
         result = await provider.get_embedding("hello")
         assert result == fake_embedding
-        assert provider.dimension == 5
+        mock_embed.assert_called_once_with(model="nomic-embed-text", input="hello")
 
 
 @pytest.mark.asyncio

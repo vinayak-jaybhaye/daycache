@@ -491,3 +491,52 @@ def test_clean_and_parse_json() -> None:
     # 3. Control characters inside strings (strict=False validation)
     control_char_json = '{\n  "key": "value\nwith newlines"\n}'
     assert clean_and_parse_json(control_char_json) == {"key": "value\nwith newlines"}
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_sdk_integration() -> None:
+    """Test that GeminiLLMProvider and GeminiEmbeddingProvider use google-genai SDK correctly."""
+    from unittest.mock import AsyncMock
+
+    from app.services.embeddings.provider import GeminiEmbeddingProvider
+    from app.services.llm.provider import GeminiLLMProvider
+
+    # Test LLM provider
+    provider = GeminiLLMProvider(api_key="fake-key", model="models/gemini-2.0-flash")
+    assert provider.model == "gemini-2.0-flash"  # Verified prefix stripped
+
+    mock_response = MagicMock()
+    mock_response.text = '{"enough_content": "YES"}'
+
+    provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+    result = await provider.generate("hello", ReflectEvaluation)
+    assert result.enough_content == "YES"
+
+    # Verify exact arguments passed to the SDK
+    provider._client.aio.models.generate_content.assert_called_once()
+    kwargs = provider._client.aio.models.generate_content.call_args[1]
+    assert kwargs["model"] == "gemini-2.0-flash"
+
+    # Test Embedding provider
+    embed_provider = GeminiEmbeddingProvider(
+        api_key="fake-key", model="models/text-embedding-004"
+    )
+    assert embed_provider.model == "text-embedding-004"  # Verified prefix stripped
+
+    mock_embed_val = MagicMock()
+    mock_embed_val.values = [0.1, 0.2, 0.3]
+    mock_embed_response = MagicMock()
+    mock_embed_response.embeddings = [mock_embed_val]
+
+    embed_provider._client.aio.models.embed_content = AsyncMock(
+        return_value=mock_embed_response
+    )
+
+    embeddings = await embed_provider.get_embedding("hello")
+    assert embeddings == [0.1, 0.2, 0.3]
+
+    # Verify exact arguments passed to the SDK
+    embed_provider._client.aio.models.embed_content.assert_called_once()
+    kwargs_embed = embed_provider._client.aio.models.embed_content.call_args[1]
+    assert kwargs_embed["model"] == "text-embedding-004"

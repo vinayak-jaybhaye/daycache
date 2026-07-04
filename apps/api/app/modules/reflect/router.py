@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -78,7 +78,7 @@ async def get_today_messages(
 
     messages = await reflect_repo.get_session_history(
         session_id=session.id,
-        date_filter=date.today(),
+        date_filter=datetime.now(UTC).date(),
         limit=100,
     )
     if not messages:

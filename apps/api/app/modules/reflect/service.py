@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -52,7 +52,9 @@ class ReflectService:
             )
 
         reflect_repo = ReflectRepository(self.db)
-        today = date.today()
+        from datetime import UTC, datetime
+
+        today = datetime.now(UTC).date()
 
         # 2. Resolve session (upsert)
         session = await reflect_repo.get_or_create_session(user_id)

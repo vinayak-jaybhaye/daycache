@@ -140,7 +140,9 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # AI LLM
     # ------------------------------------------------------------------
-    AI_LLM_PROVIDER: Literal["mock", "openai", "gemini", "ollama"] = "mock"
+    AI_LLM_PROVIDER: Literal["mock", "openai", "gemini", "ollama", "grok", "xai"] = (
+        "mock"
+    )
     AI_LLM_MODEL: str = "gemini-2.0-flash"
     AI_LLM_API_KEY: SecretStr = SecretStr("")
 

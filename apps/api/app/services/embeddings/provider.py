@@ -3,9 +3,20 @@
 from __future__ import annotations
 
 import random
-from typing import Protocol
+from typing import Any, ClassVar, Protocol
 
-import httpx
+import numpy as np
+from google import genai
+from google.genai import types
+from google.genai.errors import APIError as GeminiAPIError
+from ollama import (
+    AsyncClient as AsyncOllamaClient,
+)
+from ollama import (
+    ResponseError as OllamaResponseError,
+)
+from openai import APIError as OpenAIAPIError
+from openai import AsyncOpenAI
 
 from app.core.config import get_settings
 
@@ -41,99 +52,118 @@ class MockEmbeddingProvider:
 
 
 class OpenAIEmbeddingProvider:
-    """OpenAI embeddings provider using direct API calls."""
+    """OpenAI embeddings provider using the official OpenAI SDK."""
 
-    def __init__(self, api_key: str, model: str) -> None:
+    def __init__(self, api_key: str, model: str, dimension: int = 768) -> None:
         self.api_key = api_key
         self.model = model
+        self._dimension = dimension
+        self._client = AsyncOpenAI(api_key=api_key)
 
     @property
     def dimension(self) -> int:
-        # text-embedding-3-small and text-embedding-ada-002 are 1536-dimensional
-        return 1536
+        # text-embedding-3-small/-large support truncation via the `dimensions` param;
+        # text-embedding-ada-002 does NOT support truncation and is fixed at 1536.
+        return self._dimension
 
     async def get_embedding(self, text: str) -> list[float]:
         if not self.api_key:
             raise ValueError("OpenAI API key is missing.")
 
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
-        }
-        payload = {
-            "input": text,
-            "model": self.model,
-        }
+        kwargs: dict[str, Any] = {"model": self.model, "input": text}
+        # ada-002 errors out if you pass `dimensions` at all, so only send it
+        # for models that actually support truncation.
+        if self.model != "text-embedding-ada-002":
+            kwargs["dimensions"] = self._dimension
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(
-                "https://api.openai.com/v1/embeddings",
-                headers=headers,
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data["data"][0]["embedding"]
+        try:
+            response = await self._client.embeddings.create(**kwargs)
+        except OpenAIAPIError as e:
+            raise RuntimeError(f"OpenAI embedding request failed: {e}") from e
+
+        return response.data[0].embedding
 
 
 class GeminiEmbeddingProvider:
-    """Gemini embeddings provider using direct API calls."""
+    """Gemini embeddings provider using the official Google GenAI SDK."""
+
+    _NATIVE_768_MODELS: ClassVar[set[str]] = {"text-embedding-004"}
 
     def __init__(self, api_key: str, model: str) -> None:
         self.api_key = api_key
-        self.model = model
+        self.model = model.removeprefix("models/") if model else ""
+        self._client = genai.Client(api_key=api_key)
 
     @property
     def dimension(self) -> int:
-        # text-embedding-004 has 768 dimensions
-        return 768
+        return 768  # enforced via output_dimensionality below
 
     async def get_embedding(self, text: str) -> list[float]:
         if not self.api_key:
             raise ValueError("Gemini API key is missing.")
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:embedContent?key={self.api_key}"
-        payload = {"content": {"parts": [{"text": text}]}}
+        config = None
+        if self.model not in self._NATIVE_768_MODELS:
+            config = types.EmbedContentConfig(output_dimensionality=768)
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(
-                url,
-                json=payload,
+        try:
+            response = await self._client.aio.models.embed_content(
+                model=self.model,
+                contents=text,
+                config=config,
             )
-            response.raise_for_status()
-            data = response.json()
-            return data["embedding"]["values"]
+        except GeminiAPIError as e:
+            raise RuntimeError(f"Gemini API error ({e.code}): {e.message}") from e
+        except Exception as e:
+            raise RuntimeError(f"Gemini embedding request failed: {e}") from e
+
+        if not response.embeddings:
+            raise RuntimeError("No embeddings returned from Gemini.")
+
+        embedding = response.embeddings[0].values
+        if embedding is None:
+            raise RuntimeError("Gemini embedding values are missing.")
+
+        # MRL-truncated outputs (anything != native model dim) need re-normalizing
+        if self.model not in self._NATIVE_768_MODELS:
+            vec = np.array(embedding, dtype=np.float32)
+            norm = np.linalg.norm(vec)
+            if norm > 0:
+                vec = vec / norm
+            embedding = vec.tolist()
+
+        return embedding
 
 
 class OllamaEmbeddingProvider:
-    """Ollama local embeddings provider using direct API calls."""
+    """Ollama local embeddings provider using the official Ollama SDK."""
 
-    def __init__(self, base_url: str, model: str) -> None:
+    def __init__(self, base_url: str, model: str, dimension: int = 768) -> None:
         self.base_url = base_url
         self.model = model
-        self._dimension = 768  # default to 768 for nomic-embed-text
+        self._dimension = (
+            dimension  # expected/enforced dimension, e.g. 768 for nomic-embed-text
+        )
+        self._client = AsyncOllamaClient(host=base_url)
 
     @property
     def dimension(self) -> int:
         return self._dimension
 
     async def get_embedding(self, text: str) -> list[float]:
-        url = f"{self.base_url.rstrip('/')}/api/embeddings"
-        payload = {
-            "model": self.model,
-            "prompt": text,
-        }
+        try:
+            response = await self._client.embed(model=self.model, input=text)
+        except OllamaResponseError as e:
+            raise RuntimeError(f"Ollama embedding request failed: {e}") from e
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(
-                url,
-                json=payload,
+        embedding = response.embeddings[0]
+        if len(embedding) != self._dimension:
+            raise RuntimeError(
+                f"Ollama model '{self.model}' returned a {len(embedding)}-dim vector, "
+                f"but this provider is configured for {self._dimension} dims. "
+                "Check AI_EMBEDDING_MODEL / your vector DB schema."
             )
-            response.raise_for_status()
-            data = response.json()
-            embedding = data["embedding"]
-            self._dimension = len(embedding)
-            return embedding
+        return list(embedding)
 
 
 def get_embedding_provider() -> EmbeddingProvider:
@@ -145,20 +175,18 @@ def get_embedding_provider() -> EmbeddingProvider:
         return OpenAIEmbeddingProvider(
             api_key=settings.OPENAI_API_KEY.get_secret_value(),
             model=settings.AI_EMBEDDING_MODEL,
+            dimension=768,
         )
     elif provider_type == "gemini":
-        model = settings.AI_EMBEDDING_MODEL
-        if "/" not in model:
-            # Prefix with models/ if not present
-            model = f"models/{model}"
         return GeminiEmbeddingProvider(
             api_key=settings.GEMINI_API_KEY.get_secret_value(),
-            model=model,
+            model=settings.AI_EMBEDDING_MODEL,
         )
     elif provider_type == "ollama":
         return OllamaEmbeddingProvider(
             base_url=settings.OLLAMA_BASE_URL,
             model=settings.AI_EMBEDDING_MODEL,
+            dimension=768,
         )
     else:
         return MockEmbeddingProvider(dimension=768)
@@ -176,8 +204,15 @@ class EmbeddingGenerator:
         self._provider = get_embedding_provider()
 
     async def generate(self, text: str) -> list[float]:
-        """Generate an embedding for a single text chunk."""
-        return await self._provider.get_embedding(text)
+        """Generate an embedding for a single text chunk, enforcing the expected dimension."""
+        embedding = await self._provider.get_embedding(text)
+        if len(embedding) != self._provider.dimension:
+            raise RuntimeError(
+                f"Provider '{self.provider_name}' (model '{self.model_name}') returned a "
+                f"{len(embedding)}-dim embedding, but {self._provider.dimension} dims were "
+                "expected. This will not match your vector DB schema."
+            )
+        return embedding
 
     async def generate_batch(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings in parallel for a batch of text chunks."""

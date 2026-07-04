@@ -7,7 +7,10 @@ import logging
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, cast
 
-import httpx
+from google import genai
+from google.genai import types
+from ollama import AsyncClient as AsyncOllamaClient
+from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
 if TYPE_CHECKING:
@@ -56,6 +59,21 @@ def clean_and_parse_json(text: str) -> Any:
             raise e
 
     raise json.JSONDecodeError("Could not locate JSON object boundaries", text, 0)
+
+
+def _resolve_target_model(
+    requested_model: str | None, own_model: str, foreign_prefixes: tuple[str, ...]
+) -> str:
+    """Resolve the model to actually use, ignoring cross-provider model names.
+
+    If `requested_model` looks like it belongs to a different provider (e.g. a
+    "gpt-" name passed to the Gemini provider), fall back to this provider's
+    own configured model instead of sending a foreign model name upstream.
+    """
+    target_model = requested_model or own_model
+    if requested_model and any(p in requested_model.lower() for p in foreign_prefixes):
+        target_model = own_model
+    return target_model
 
 
 class LLMProvider(Protocol):
@@ -150,11 +168,14 @@ class MockLLMProvider:
 
 
 class GeminiLLMProvider:
-    """Google Gemini LLM provider using direct REST API calls."""
+    """Google Gemini LLM provider using the official Google GenAI SDK."""
+
+    _FOREIGN_PREFIXES = ("claude-", "gpt-")
 
     def __init__(self, api_key: str, model: str) -> None:
         self.api_key = api_key
-        self.model = model
+        self.model = model.removeprefix("models/") if model else ""
+        self._client = genai.Client(api_key=api_key)
 
     async def generate(
         self, prompt: str, response_model: type[T], model: str | None = None
@@ -162,95 +183,62 @@ class GeminiLLMProvider:
         if not self.api_key:
             raise ValueError("Gemini API key is missing.")
 
-        target_model = model or self.model
-        if model and any(p in model.lower() for p in ["claude-", "gpt-"]):
-            target_model = self.model
+        target_model = _resolve_target_model(model, self.model, self._FOREIGN_PREFIXES)
+        target_model = target_model.removeprefix("models/")
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={self.api_key}"
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"responseMimeType": "application/json"},
-        }
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=target_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=response_model,
+                ),
+            )
+        except Exception as e:
+            raise LLMValidationError(f"Gemini generation request failed: {e}") from e
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            data = response.json()
+        text_response = response.text
+        if not text_response:
+            raise LLMValidationError("Empty response from Gemini API.")
 
-            try:
-                text_response = data["candidates"][0]["content"]["parts"][0]["text"]
-            except (KeyError, IndexError) as e:
-                raise LLMValidationError(
-                    f"Invalid Gemini API response structure: {data}"
-                ) from e
-
-            try:
-                parsed_json = clean_and_parse_json(text_response)
-                return response_model.model_validate(parsed_json)
-            except (json.JSONDecodeError, ValidationError) as e:
-                logger.error(
-                    "Gemini output validation failed. Raw response: %s", text_response
-                )
-                raise LLMValidationError(
-                    f"Validation against schema {response_model.__name__} failed: {e}"
-                ) from e
+        try:
+            parsed_json = clean_and_parse_json(text_response)
+            return response_model.model_validate(parsed_json)
+        except (json.JSONDecodeError, ValidationError) as e:
+            logger.error(
+                "Gemini output validation failed. Raw response: %s", text_response
+            )
+            raise LLMValidationError(
+                f"Validation against schema {response_model.__name__} failed: {e}"
+            ) from e
 
     async def stream(self, prompt: str, model: str | None = None) -> AsyncIterator[str]:
         if not self.api_key:
             raise ValueError("Gemini API key is missing.")
 
-        target_model = model or self.model
-        if model and any(p in model.lower() for p in ["claude-", "gpt-"]):
-            target_model = self.model
+        target_model = _resolve_target_model(model, self.model, self._FOREIGN_PREFIXES)
+        target_model = target_model.removeprefix("models/")
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:streamGenerateContent?key={self.api_key}"
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"maxOutputTokens": 1000},
-        }
+        response_stream = await self._client.aio.models.generate_content_stream(
+            model=target_model,
+            contents=prompt,
+        )
 
-        async with (
-            httpx.AsyncClient(timeout=30.0) as client,
-            client.stream("POST", url, json=payload) as response,
-        ):
-            response.raise_for_status()
-            buffer = ""
-            async for chunk in response.aiter_text():
-                buffer += chunk
-                while True:
-                    start_idx = buffer.find("{")
-                    if start_idx == -1:
-                        break
-                    depth = 0
-                    end_idx = -1
-                    for i in range(start_idx, len(buffer)):
-                        if buffer[i] == "{":
-                            depth += 1
-                        elif buffer[i] == "}":
-                            depth -= 1
-                            if depth == 0:
-                                end_idx = i
-                                break
-                    if end_idx == -1:
-                        break
-
-                    obj_str = buffer[start_idx : end_idx + 1]
-                    buffer = buffer[end_idx + 1 :]
-                    try:
-                        data = json.loads(obj_str)
-                        text_part = data["candidates"][0]["content"]["parts"][0]["text"]
-                        if text_part:
-                            yield text_part
-                    except (KeyError, IndexError, json.JSONDecodeError):
-                        continue
+        async for chunk in response_stream:
+            if chunk.text:
+                yield chunk.text
 
 
 class OpenAILLMProvider:
-    """OpenAI LLM provider using direct REST API calls."""
+    """OpenAI LLM provider using the official OpenAI SDK."""
+
+    _FOREIGN_PREFIXES = ("claude-", "gemini-")
 
     def __init__(self, api_key: str, model: str) -> None:
         self.api_key = api_key
         self.model = model
+        self._client = AsyncOpenAI(api_key=api_key)
 
     async def generate(
         self, prompt: str, response_model: type[T], model: str | None = None
@@ -258,157 +246,178 @@ class OpenAILLMProvider:
         if not self.api_key:
             raise ValueError("OpenAI API key is missing.")
 
-        target_model = model or self.model
-        if model and any(p in model.lower() for p in ["claude-", "gemini-"]):
-            target_model = self.model
+        target_model = _resolve_target_model(model, self.model, self._FOREIGN_PREFIXES)
 
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
-        }
-        payload = {
-            "model": target_model,
-            "messages": [{"role": "user", "content": prompt}],
-            "response_format": {"type": "json_object"},
-        }
+        try:
+            response = await self._client.chat.completions.create(
+                model=target_model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            )
+        except Exception as e:
+            raise LLMValidationError(f"OpenAI generation request failed: {e}") from e
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
+        try:
+            text_response = response.choices[0].message.content
+            if not text_response:
+                raise LLMValidationError("Empty response from OpenAI API.")
+        except (IndexError, AttributeError) as e:
+            raise LLMValidationError(
+                f"Invalid OpenAI API response structure: {response}"
+            ) from e
 
-            try:
-                text_response = data["choices"][0]["message"]["content"]
-            except (KeyError, IndexError) as e:
-                raise LLMValidationError(
-                    f"Invalid OpenAI API response structure: {data}"
-                ) from e
-
-            try:
-                parsed_json = clean_and_parse_json(text_response)
-                return response_model.model_validate(parsed_json)
-            except (json.JSONDecodeError, ValidationError) as e:
-                logger.error(
-                    "OpenAI output validation failed. Raw response: %s", text_response
-                )
-                raise LLMValidationError(
-                    f"Validation against schema {response_model.__name__} failed: {e}"
-                ) from e
+        try:
+            parsed_json = clean_and_parse_json(text_response)
+            return response_model.model_validate(parsed_json)
+        except (json.JSONDecodeError, ValidationError) as e:
+            logger.error(
+                "OpenAI output validation failed. Raw response: %s", text_response
+            )
+            raise LLMValidationError(
+                f"Validation against schema {response_model.__name__} failed: {e}"
+            ) from e
 
     async def stream(self, prompt: str, model: str | None = None) -> AsyncIterator[str]:
         if not self.api_key:
             raise ValueError("OpenAI API key is missing.")
 
-        target_model = model or self.model
-        if model and any(p in model.lower() for p in ["claude-", "gemini-"]):
-            target_model = self.model
+        target_model = _resolve_target_model(model, self.model, self._FOREIGN_PREFIXES)
 
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
-        }
-        payload = {
-            "model": target_model,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": True,
-            "max_tokens": 1000,
-        }
+        stream = await self._client.chat.completions.create(
+            model=target_model,
+            messages=[{"role": "user", "content": prompt}],
+            stream=True,
+            max_tokens=1000,
+        )
 
-        async with (
-            httpx.AsyncClient(timeout=30.0) as client,
-            client.stream("POST", url, headers=headers, json=payload) as response,
-        ):
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                if not line:
-                    continue
-                if line.startswith("data: "):
-                    data_str = line[len("data: ") :].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        data_json = json.loads(data_str)
-                        choice = data_json.get("choices", [{}])[0]
-                        delta = choice.get("delta", {})
-                        content = delta.get("content")
-                        if content:
-                            yield content
-                    except Exception:
-                        continue
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            content = chunk.choices[0].delta.content
+            if content:
+                yield content
+
+
+class GrokLLMProvider:
+    """xAI Grok LLM provider, using the official OpenAI SDK against xAI's OpenAI-compatible endpoint."""
+
+    _FOREIGN_PREFIXES = ("claude-", "gpt-", "gemini-")
+    _BASE_URL = "https://api.x.ai/v1"
+
+    def __init__(self, api_key: str, model: str) -> None:
+        self.api_key = api_key
+        self.model = model
+        self._client = AsyncOpenAI(api_key=api_key, base_url=self._BASE_URL)
+
+    async def generate(
+        self, prompt: str, response_model: type[T], model: str | None = None
+    ) -> T:
+        if not self.api_key:
+            raise ValueError("Grok (xAI) API key is missing.")
+
+        target_model = _resolve_target_model(model, self.model, self._FOREIGN_PREFIXES)
+
+        try:
+            response = await self._client.chat.completions.create(
+                model=target_model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            )
+        except Exception as e:
+            raise LLMValidationError(f"Grok generation request failed: {e}") from e
+
+        try:
+            text_response = response.choices[0].message.content
+            if not text_response:
+                raise LLMValidationError("Empty response from Grok API.")
+        except (IndexError, AttributeError) as e:
+            raise LLMValidationError(
+                f"Invalid Grok API response structure: {response}"
+            ) from e
+
+        try:
+            parsed_json = clean_and_parse_json(text_response)
+            return response_model.model_validate(parsed_json)
+        except (json.JSONDecodeError, ValidationError) as e:
+            logger.error(
+                "Grok output validation failed. Raw response: %s", text_response
+            )
+            raise LLMValidationError(
+                f"Validation against schema {response_model.__name__} failed: {e}"
+            ) from e
+
+    async def stream(self, prompt: str, model: str | None = None) -> AsyncIterator[str]:
+        if not self.api_key:
+            raise ValueError("Grok (xAI) API key is missing.")
+
+        target_model = _resolve_target_model(model, self.model, self._FOREIGN_PREFIXES)
+
+        stream = await self._client.chat.completions.create(
+            model=target_model,
+            messages=[{"role": "user", "content": prompt}],
+            stream=True,
+            max_tokens=1000,
+        )
+
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            content = chunk.choices[0].delta.content
+            if content:
+                yield content
 
 
 class OllamaLLMProvider:
-    """Ollama local LLM provider using direct REST API calls."""
+    """Ollama local LLM provider using the official Ollama SDK."""
+
+    _FOREIGN_PREFIXES = ("claude-", "gpt-", "gemini-")
 
     def __init__(self, base_url: str, model: str) -> None:
         self.base_url = base_url
         self.model = model
+        self._client = AsyncOllamaClient(host=base_url)
 
     async def generate(
         self, prompt: str, response_model: type[T], model: str | None = None
     ) -> T:
-        target_model = model or self.model
-        if model and any(p in model.lower() for p in ["claude-", "gpt-", "gemini-"]):
-            target_model = self.model
+        target_model = _resolve_target_model(model, self.model, self._FOREIGN_PREFIXES)
 
-        url = f"{self.base_url.rstrip('/')}/api/generate"
-        payload = {
-            "model": target_model,
-            "prompt": prompt,
-            "format": "json",
-            "stream": False,
-        }
+        try:
+            response = await self._client.generate(
+                model=target_model,
+                prompt=prompt,
+                format="json",
+                stream=False,
+            )
+        except Exception as e:
+            raise LLMValidationError(f"Ollama generation request failed: {e}") from e
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            data = response.json()
+        text_response = response.response
+        if not text_response:
+            raise LLMValidationError("Empty response from Ollama API.")
 
-            try:
-                text_response = data["response"]
-            except KeyError as e:
-                raise LLMValidationError(
-                    f"Invalid Ollama response structure: {data}"
-                ) from e
-
-            try:
-                parsed_json = clean_and_parse_json(text_response)
-                return response_model.model_validate(parsed_json)
-            except (json.JSONDecodeError, ValidationError) as e:
-                logger.error(
-                    "Ollama output validation failed. Raw response: %s", text_response
-                )
-                raise LLMValidationError(
-                    f"Validation against schema {response_model.__name__} failed: {e}"
-                ) from e
+        try:
+            parsed_json = clean_and_parse_json(text_response)
+            return response_model.model_validate(parsed_json)
+        except (json.JSONDecodeError, ValidationError) as e:
+            logger.error(
+                "Ollama output validation failed. Raw response: %s", text_response
+            )
+            raise LLMValidationError(
+                f"Validation against schema {response_model.__name__} failed: {e}"
+            ) from e
 
     async def stream(self, prompt: str, model: str | None = None) -> AsyncIterator[str]:
-        target_model = model or self.model
-        if model and any(p in model.lower() for p in ["claude-", "gpt-", "gemini-"]):
-            target_model = self.model
+        target_model = _resolve_target_model(model, self.model, self._FOREIGN_PREFIXES)
 
-        url = f"{self.base_url.rstrip('/')}/api/generate"
-        payload = {
-            "model": target_model,
-            "prompt": prompt,
-            "stream": True,
-            "options": {"num_predict": 1000},
-        }
+        stream = await self._client.generate(
+            model=target_model,
+            prompt=prompt,
+            stream=True,
+            options={"num_predict": 1000},
+        )
 
-        async with (
-            httpx.AsyncClient(timeout=60.0) as client,
-            client.stream("POST", url, json=payload) as response,
-        ):
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                    text_response = data.get("response", "")
-                    if text_response:
-                        yield text_response
-                except json.JSONDecodeError:
-                    continue
+        async for part in stream:
+            text_response = part.response
+            if text_response:
+                yield text_response

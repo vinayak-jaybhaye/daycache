@@ -290,9 +290,8 @@ async def test_recall_delete_messages_by_date(
     await db_session.flush()
 
     # Delete all messages for yesterday
-    yesterday_date_str = (
-        datetime.date.today() - datetime.timedelta(days=1)
-    ).isoformat()
+    today_utc = datetime.datetime.now(datetime.UTC).date()
+    yesterday_date_str = (today_utc - datetime.timedelta(days=1)).isoformat()
     del_res = await async_client.delete(
         f"/api/v1/recall/messages?date={yesterday_date_str}"
     )
