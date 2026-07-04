@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -19,7 +20,7 @@ from app.modules.search.schemas import SearchResultItem
 from app.modules.search.service import SearchService
 
 
-async def register_and_login(client: AsyncClient, email: str) -> dict:
+async def register_and_login(client: AsyncClient, email: str) -> dict[str, Any]:
     """Helper to register and login a user, returning user info."""
     await client.post(
         "/api/v1/auth/register",
@@ -375,7 +376,7 @@ async def test_recall_save_user_message_even_if_llm_fails(
         )
     ]
 
-    async def mock_stream(*args, **kwargs):
+    async def mock_stream(*args: object, **kwargs: object):
         # Yield one token and then raise exception
         yield "Initial"
         raise RuntimeError("LLM connection crashed!")

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
-from sqlalchemy import delete, desc, func, select, text
+from sqlalchemy import CursorResult, delete, desc, func, select, text
 from sqlalchemy.dialects.postgresql import insert
 
 from app.db.models.recall import RecallMessage, RecallSession
@@ -103,7 +103,7 @@ class RecallRepository(BaseRepository[RecallSession]):
         session_id: UUID,
         role: str,
         content: str,
-        retrieved_entries: list[dict] | None = None,
+        retrieved_entries: list[dict[str, Any]] | None = None,
     ) -> RecallMessage:
         """Save a new message turn (user/assistant) to the database."""
 
@@ -171,7 +171,7 @@ class RecallRepository(BaseRepository[RecallSession]):
                 target_date=target_date
             ),
         )
-        res = await self._session.execute(stmt)
+        res = cast("CursorResult[Any]", await self._session.execute(stmt))
         await self._session.flush()
         return res.rowcount
 
