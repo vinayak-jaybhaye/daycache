@@ -43,7 +43,7 @@ class MockEmbeddingProvider:
 class OpenAIEmbeddingProvider:
     """OpenAI embeddings provider using direct API calls."""
 
-    def __init__(self, api_key: str, model: str = "text-embedding-3-small") -> None:
+    def __init__(self, api_key: str, model: str) -> None:
         self.api_key = api_key
         self.model = model
 
@@ -79,7 +79,7 @@ class OpenAIEmbeddingProvider:
 class GeminiEmbeddingProvider:
     """Gemini embeddings provider using direct API calls."""
 
-    def __init__(self, api_key: str, model: str = "models/text-embedding-004") -> None:
+    def __init__(self, api_key: str, model: str) -> None:
         self.api_key = api_key
         self.model = model
 
@@ -108,7 +108,7 @@ class GeminiEmbeddingProvider:
 class OllamaEmbeddingProvider:
     """Ollama local embeddings provider using direct API calls."""
 
-    def __init__(self, base_url: str, model: str = "nomic-embed-text") -> None:
+    def __init__(self, base_url: str, model: str) -> None:
         self.base_url = base_url
         self.model = model
         self._dimension = 768  # default to 768 for nomic-embed-text

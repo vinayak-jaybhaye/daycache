@@ -202,9 +202,7 @@ class RecallService:
             provider = get_llm_provider()
             full_response_text = ""
             try:
-                async for token in provider.stream(
-                    full_prompt, model="claude-haiku-4-5"
-                ):
+                async for token in provider.stream(full_prompt):
                     full_response_text += token
                     yield f"data: {token}\n\n"
             except Exception:

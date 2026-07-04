@@ -39,7 +39,7 @@ class LLMProvider(Protocol):
 class MockLLMProvider:
     """Mock LLM provider for testing and local offline development."""
 
-    def __init__(self, model: str = "mock-llm") -> None:
+    def __init__(self, model: str) -> None:
         self.model = model
 
     async def generate(self, prompt: str, response_model: type[T]) -> T:
@@ -96,7 +96,7 @@ class MockLLMProvider:
 class GeminiLLMProvider:
     """Google Gemini LLM provider using direct REST API calls."""
 
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash") -> None:
+    def __init__(self, api_key: str, model: str) -> None:
         self.api_key = api_key
         self.model = model
 
@@ -186,7 +186,7 @@ class GeminiLLMProvider:
 class OpenAILLMProvider:
     """OpenAI LLM provider using direct REST API calls."""
 
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini") -> None:
+    def __init__(self, api_key: str, model: str) -> None:
         self.api_key = api_key
         self.model = model
 
@@ -274,7 +274,7 @@ class OpenAILLMProvider:
 class OllamaLLMProvider:
     """Ollama local LLM provider using direct REST API calls."""
 
-    def __init__(self, base_url: str, model: str = "llama3.2") -> None:
+    def __init__(self, base_url: str, model: str) -> None:
         self.base_url = base_url
         self.model = model
 
