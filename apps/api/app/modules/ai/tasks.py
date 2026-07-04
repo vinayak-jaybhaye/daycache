@@ -30,7 +30,7 @@ async def generate_entry_summary_task(ctx: dict[str, Any], entry_id: str) -> Non
         logger.warning("Entry %s not found for AI summary generation.", entry_id)
         return
 
-    user_id = UUID(entry.day.user_id)
+    user_id = UUID(str(entry.day.user_id))
     try:
         await AISummaryService.generate_summary(
             db,
@@ -60,7 +60,7 @@ async def generate_day_summary_task(ctx: dict[str, Any], day_id: str) -> None:
         logger.warning("Day %s not found for daily summary generation.", day_id)
         return
 
-    user_id = UUID(day.user_id)
+    user_id = UUID(str(day.user_id))
     try:
         await AISummaryService.generate_summary(
             db,
@@ -93,7 +93,7 @@ async def generate_weekly_summaries_task(ctx: dict[str, Any]) -> None:
     user_ids = res.scalars().all()
 
     for u_id_val in user_ids:
-        u_id = u_id_val if isinstance(u_id_val, UUID) else UUID(u_id_val)
+        u_id = UUID(str(u_id_val))
         try:
             await AISummaryService.generate_summary(
                 db,
@@ -129,7 +129,7 @@ async def generate_monthly_summaries_task(ctx: dict[str, Any]) -> None:
     user_ids = res.scalars().all()
 
     for u_id_val in user_ids:
-        u_id = u_id_val if isinstance(u_id_val, UUID) else UUID(u_id_val)
+        u_id = UUID(str(u_id_val))
         try:
             await AISummaryService.generate_summary(
                 db,
@@ -163,7 +163,7 @@ async def generate_yearly_summaries_task(ctx: dict[str, Any]) -> None:
     user_ids = res.scalars().all()
 
     for u_id_val in user_ids:
-        u_id = u_id_val if isinstance(u_id_val, UUID) else UUID(u_id_val)
+        u_id = UUID(str(u_id_val))
         try:
             await AISummaryService.generate_summary(
                 db,

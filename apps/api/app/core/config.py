@@ -144,6 +144,11 @@ class Settings(BaseSettings):
     AI_LLM_MODEL: str = "gemini-2.0-flash"
     AI_LLM_API_KEY: SecretStr = SecretStr("")
 
+    # Reflect Models
+    AI_REFLECT_STREAM_MODEL: str = "claude-sonnet-4-6"
+    AI_REFLECT_EVAL_MODEL: str = "claude-haiku-4-5"
+    AI_REFLECT_GEN_MODEL: str = "claude-sonnet-4-6"
+
     # ------------------------------------------------------------------
     # Recall Feature Settings
     # ------------------------------------------------------------------

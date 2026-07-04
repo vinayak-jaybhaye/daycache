@@ -14,6 +14,7 @@ from app.db.models.journal import Day, JournalEntry
 from app.db.models.media import JournalMedia, Media
 from app.db.models.mood import EntryMood, Mood
 from app.db.models.recall import RecallMessage, RecallSession
+from app.db.models.reflect import ReflectEntry, ReflectMessage, ReflectSession
 from app.db.models.tag import JournalTag, Tag
 from app.db.models.user import User, UserSettings
 
@@ -34,6 +35,9 @@ __all__ = [
     "OAuthAccount",
     "RecallMessage",
     "RecallSession",
+    "ReflectEntry",
+    "ReflectMessage",
+    "ReflectSession",
     "Session",
     "Summary",
     "Tag",

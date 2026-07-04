@@ -20,6 +20,7 @@ from app.api.v1.settings import router as settings_router
 from app.api.v1.tags import router as tags_router
 from app.api.v1.users import router as users_router
 from app.modules.recall.router import router as recall_router
+from app.modules.reflect.router import router as reflect_router
 
 router = APIRouter()
 
@@ -37,3 +38,4 @@ router.include_router(moods_router, prefix="/moods", tags=["moods"])
 router.include_router(search_router, prefix="/search", tags=["search"])
 router.include_router(ai_router, prefix="/ai/summaries", tags=["ai"])
 router.include_router(recall_router, prefix="/recall", tags=["recall"])
+router.include_router(reflect_router, prefix="/reflect", tags=["reflect"])

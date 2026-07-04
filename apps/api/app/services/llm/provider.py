@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, cast
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -24,10 +24,46 @@ class LLMValidationError(Exception):
     pass
 
 
+def clean_and_parse_json(text: str) -> Any:
+    """Clean markdown wrappers and parse JSON string robustly, allowing raw control chars."""
+    text_clean = text.strip()
+
+    # 1. Strip markdown code block markers
+    if text_clean.startswith("```"):
+        first_newline = text_clean.find("\n")
+        if first_newline != -1:
+            text_clean = text_clean[first_newline:].strip()
+        else:
+            text_clean = text_clean[3:].strip()
+
+        if text_clean.endswith("```"):
+            text_clean = text_clean[:-3].strip()
+
+    # 2. Try to parse directly (with strict=False to support unescaped newlines/tabs inside JSON strings)
+    try:
+        return json.loads(text_clean, strict=False)
+    except json.JSONDecodeError:
+        pass
+
+    # 3. Locate first '{' and last '}'
+    first_brace = text_clean.find("{")
+    last_brace = text_clean.rfind("}")
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        candidate = text_clean[first_brace : last_brace + 1]
+        try:
+            return json.loads(candidate, strict=False)
+        except json.JSONDecodeError as e:
+            raise e
+
+    raise json.JSONDecodeError("Could not locate JSON object boundaries", text, 0)
+
+
 class LLMProvider(Protocol):
     """Protocol defining the interface for all LLM providers."""
 
-    async def generate(self, prompt: str, response_model: type[T]) -> T:
+    async def generate(
+        self, prompt: str, response_model: type[T], model: str | None = None
+    ) -> T:
         """Send a prompt to the LLM and return a validated Pydantic model response."""
         ...
 
@@ -42,8 +78,28 @@ class MockLLMProvider:
     def __init__(self, model: str) -> None:
         self.model = model
 
-    async def generate(self, prompt: str, response_model: type[T]) -> T:
+    async def generate(
+        self, prompt: str, response_model: type[T], model: str | None = None
+    ) -> T:
         logger.info("Mock LLM called with prompt length: %d", len(prompt))
+
+        # Check for ReflectEvaluation
+        if response_model.__name__ == "ReflectEvaluation":
+            from app.modules.reflect.tasks import ReflectEvaluation
+
+            return cast(T, ReflectEvaluation(enough_content="YES"))
+
+        # Check for ReflectEntryGeneration
+        if response_model.__name__ == "ReflectEntryGeneration":
+            from app.modules.reflect.tasks import ReflectEntryGeneration
+
+            return cast(
+                T,
+                ReflectEntryGeneration(
+                    title="Mock Reflect Title",
+                    content="This is a mock Reflect journal entry generated automatically.",
+                ),
+            )
 
         # Check for SummaryOutput model (specific feature summary schema)
         if response_model.__name__ == "SummaryOutput":
@@ -100,11 +156,17 @@ class GeminiLLMProvider:
         self.api_key = api_key
         self.model = model
 
-    async def generate(self, prompt: str, response_model: type[T]) -> T:
+    async def generate(
+        self, prompt: str, response_model: type[T], model: str | None = None
+    ) -> T:
         if not self.api_key:
             raise ValueError("Gemini API key is missing.")
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        target_model = model or self.model
+        if model and any(p in model.lower() for p in ["claude-", "gpt-"]):
+            target_model = self.model
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={self.api_key}"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"responseMimeType": "application/json"},
@@ -123,7 +185,7 @@ class GeminiLLMProvider:
                 ) from e
 
             try:
-                parsed_json = json.loads(text_response)
+                parsed_json = clean_and_parse_json(text_response)
                 return response_model.model_validate(parsed_json)
             except (json.JSONDecodeError, ValidationError) as e:
                 logger.error(
@@ -190,9 +252,15 @@ class OpenAILLMProvider:
         self.api_key = api_key
         self.model = model
 
-    async def generate(self, prompt: str, response_model: type[T]) -> T:
+    async def generate(
+        self, prompt: str, response_model: type[T], model: str | None = None
+    ) -> T:
         if not self.api_key:
             raise ValueError("OpenAI API key is missing.")
+
+        target_model = model or self.model
+        if model and any(p in model.lower() for p in ["claude-", "gemini-"]):
+            target_model = self.model
 
         url = "https://api.openai.com/v1/chat/completions"
         headers = {
@@ -200,7 +268,7 @@ class OpenAILLMProvider:
             "Authorization": f"Bearer {self.api_key}",
         }
         payload = {
-            "model": self.model,
+            "model": target_model,
             "messages": [{"role": "user", "content": prompt}],
             "response_format": {"type": "json_object"},
         }
@@ -218,7 +286,7 @@ class OpenAILLMProvider:
                 ) from e
 
             try:
-                parsed_json = json.loads(text_response)
+                parsed_json = clean_and_parse_json(text_response)
                 return response_model.model_validate(parsed_json)
             except (json.JSONDecodeError, ValidationError) as e:
                 logger.error(
@@ -278,10 +346,16 @@ class OllamaLLMProvider:
         self.base_url = base_url
         self.model = model
 
-    async def generate(self, prompt: str, response_model: type[T]) -> T:
+    async def generate(
+        self, prompt: str, response_model: type[T], model: str | None = None
+    ) -> T:
+        target_model = model or self.model
+        if model and any(p in model.lower() for p in ["claude-", "gpt-", "gemini-"]):
+            target_model = self.model
+
         url = f"{self.base_url.rstrip('/')}/api/generate"
         payload = {
-            "model": self.model,
+            "model": target_model,
             "prompt": prompt,
             "format": "json",
             "stream": False,
@@ -300,7 +374,7 @@ class OllamaLLMProvider:
                 ) from e
 
             try:
-                parsed_json = json.loads(text_response)
+                parsed_json = clean_and_parse_json(text_response)
                 return response_model.model_validate(parsed_json)
             except (json.JSONDecodeError, ValidationError) as e:
                 logger.error(

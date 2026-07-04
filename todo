@@ -1,0 +1,7 @@
+Recall
+Recall is DayCache's memory retrieval feature. Users can ask natural language questions about their journal history and receive answers grounded in their own past entries. It uses RAG — the question is converted to a vector embedding, semantically similar journal chunks are retrieved, and Claude answers using those chunks as context. Recall maintains conversation history within a session so users can ask follow-up questions. It never invents — every answer is sourced from what the user actually wrote.
+Examples: "What was I stressed about last month?" "When did I first mention wanting to change jobs?" "How has my mood been this year?"
+
+Reflect
+Reflect is DayCache's guided journaling feature. Instead of the user sitting down to write, the diary initiates a short conversational interview — asking questions about the user's day, listening to their answers, and writing a structured journal entry on their behalf. The user reviews and approves the generated entry before it is saved. Reflect is triggered by the user opening the feature; the system asks 4–6 contextual questions, synthesises the conversation into a first-person entry, and presents a preview. Nothing is saved without explicit user approval.
+Examples of what Reflect asks: "How did today go?" "What was the most significant moment?" "How are you feeling right now?"

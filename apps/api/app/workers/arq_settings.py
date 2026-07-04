@@ -27,6 +27,7 @@ from app.modules.ai.tasks import (
     generate_weekly_summaries_task,
     generate_yearly_summaries_task,
 )
+from app.modules.reflect.tasks import evaluate_reflect_entry
 from app.storage.factory import get_storage
 from app.workers.embedding import process_journal_entry_embeddings
 from app.workers.media import clean_stale_media, process_media
@@ -64,7 +65,11 @@ async def job_end(ctx: dict) -> None:  # type: ignore[type-arg]
 
 
 class MediaWorkerSettings:
-    """ARQ worker configuration for Media and general background jobs."""
+    """ARQ worker configuration for Media and general background jobs.
+
+    Start worker with:
+        uv run arq app.workers.arq_settings.MediaWorkerSettings
+    """
 
     functions: ClassVar = [process_media]
     queue_name = "media_processing_queue"
@@ -117,6 +122,7 @@ class AIWorkerSettings:
         generate_weekly_summaries_task,
         generate_monthly_summaries_task,
         generate_yearly_summaries_task,
+        evaluate_reflect_entry,
     ]
     queue_name = "ai_queue"
 
