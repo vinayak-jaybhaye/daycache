@@ -9,6 +9,8 @@ from fastapi import APIRouter, Depends, Response, status
 from app.api.deps import get_arq_pool, get_current_user, get_db, get_settings
 from app.db.models import User
 from app.modules.media.schemas import MediaUploadResponse
+from app.modules.settings.schemas import SettingsResponse, UpdateSettingsRequest
+from app.modules.settings.service import SettingsService
 from app.modules.users.schemas import (
     AvatarUploadRequest,
     UpdateProfileRequest,
@@ -143,3 +145,34 @@ async def delete_me(
 ) -> None:
     """Soft-delete the authenticated user account and revoke all sessions."""
     await UserService.delete_account(db=db, user_id=current_user.id)
+
+
+@router.get(
+    "/me/settings",
+    response_model=SettingsResponse,
+)
+async def get_my_settings(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SettingsResponse:
+    """Return the authenticated user's application settings."""
+    settings_orm = await SettingsService.get_settings(db=db, user_id=current_user.id)
+    return SettingsResponse.model_validate(settings_orm)
+
+
+@router.patch(
+    "/me/settings",
+    response_model=SettingsResponse,
+)
+async def update_my_settings(
+    data: UpdateSettingsRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SettingsResponse:
+    """Partially update the authenticated user's application settings."""
+    settings_orm = await SettingsService.update_settings(
+        db=db,
+        user_id=current_user.id,
+        data=data,
+    )
+    return SettingsResponse.model_validate(settings_orm)

@@ -40,6 +40,14 @@ class RecallService:
 
         settings = get_settings()
         recall_repo = RecallRepository(self.db)
+        from app.db.repositories.settings import SettingsRepository
+        from app.services.llm.personas import get_persona
+        from app.services.llm.prompt_builder import build_persona_block
+
+        settings_repo = SettingsRepository(self.db)
+        user_settings = await settings_repo.get_by_user_id(user_id)
+        persona_name = user_settings.ai_persona_name if user_settings else "Mira"
+        persona = get_persona(persona_name)
 
         # 2. Resolve session
         session = await recall_repo.get_or_create_session(user_id)
@@ -147,19 +155,21 @@ class RecallService:
                 return
 
             # Build System prompt
-            system_prompt = (
-                "You are Recall, the memory assistant for DayCache — a personal diary app.\n"
-                "Your role is to help the user understand their own past by answering\n"
-                "questions grounded strictly in their journal entries.\n\n"
-                "Rules:\n"
-                "- Answer only from the journal context provided. Never use outside knowledge.\n"
-                "- If the context does not contain enough information, say so honestly. Do not guess or infer.\n"
-                "- Always reference which entry or date your answer comes from.\n"
-                "- Never invent details, emotions, or events the user did not write.\n"
-                '- Refer to the user in second person: "you wrote", "you mentioned", "in your entry on [date]".\n'
-                "- Be concise unless the user asks for more detail.\n"
-                '- If no journal context is provided, respond: "I couldn\'t find anything in your diary related to that. Try writing about it first."'
-            )
+            system_prompt = f"""{build_persona_block(persona)}
+
+Your role in this conversation is memory retrieval — helping the user
+understand their own past by answering questions grounded strictly
+in their journal entries.
+
+Rules:
+- Answer only from the journal context provided. Never use outside knowledge.
+- If the context does not contain enough information, say so honestly.
+- Always reference which entry or date your answer comes from.
+- Never invent details the user did not write.
+- Refer to the user in second person: "you wrote", "you mentioned".
+- If no journal context is provided, respond:
+  "I couldn't find anything in your diary related to that."
+"""
 
             # Build Journal Context (chronological by date)
             sorted_results = sorted(valid_results, key=lambda x: x.day_date or date.min)

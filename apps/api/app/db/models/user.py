@@ -113,6 +113,7 @@ class UserSettings(TimestampMixin, Base):
     ai_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     editor_font: Mapped[str] = mapped_column(Text, default="inter", nullable=False)
     content_language: Mapped[str] = mapped_column(Text, default="en", nullable=False)
+    ai_persona_name: Mapped[str] = mapped_column(Text, default="Mira", nullable=False)
 
     # Relationships
     user: Mapped[User] = relationship("User", back_populates="settings")
@@ -121,5 +122,9 @@ class UserSettings(TimestampMixin, Base):
         CheckConstraint(
             "week_starts_on BETWEEN 0 AND 6",
             name="week_starts_on_check",
+        ),
+        CheckConstraint(
+            "ai_persona_name IN ('Mira', 'Sage', 'Echo', 'Jour', 'Nova', 'Cache')",
+            name="ai_persona_name_check",
         ),
     )

@@ -38,6 +38,7 @@ class SettingsResponse(BaseModel):
     ai_enabled: bool
     editor_font: str
     content_language: str
+    ai_persona_name: str
     updated_at: datetime
 
 
@@ -56,6 +57,19 @@ class UpdateSettingsRequest(BaseModel):
     ai_enabled: bool | None = None
     editor_font: str | None = Field(None, max_length=50)
     content_language: Annotated[str, Field(pattern=_LANGUAGE_RE)] | None = None
+    ai_persona_name: str | None = None
+
+    @field_validator("ai_persona_name")
+    @classmethod
+    def validate_ai_persona_name(cls, v: str | None) -> str | None:
+        if v is not None:
+            from app.services.llm.personas import VALID_PERSONA_NAMES
+
+            if v not in VALID_PERSONA_NAMES:
+                raise ValueError(
+                    f"Invalid persona name: '{v}'. Must be one of: {', '.join(sorted(VALID_PERSONA_NAMES))}"
+                )
+        return v
 
     @field_validator("timezone")
     @classmethod

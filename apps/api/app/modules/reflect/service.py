@@ -36,6 +36,14 @@ class ReflectService:
         self, user_id: UUID, content: str, arq_pool: ArqRedis
     ) -> AsyncIterator[str]:
         """Validate input, manage session/messages, retrieve context, build prompts, and stream responses."""
+        from app.db.repositories.settings import SettingsRepository
+        from app.services.llm.personas import get_persona
+        from app.services.llm.prompt_builder import build_persona_block
+
+        settings_repo = SettingsRepository(self.db)
+        user_settings = await settings_repo.get_by_user_id(user_id)
+        persona_name = user_settings.ai_persona_name if user_settings else "Mira"
+        persona = get_persona(persona_name)
         # 1. Validate content length
         if not content.strip():
             raise HTTPException(
@@ -107,33 +115,19 @@ class ReflectService:
             turns = [{"role": m.role, "content": m.content} for m in all_prev_msgs]
 
             # System prompt
-            system_prompt = (
-                "You are Reflect, a warm and genuinely curious companion in DayCache —\n"
-                "a personal diary app. You have natural, friendly conversations with\n"
-                "the user about their day to help them capture it.\n\n"
-                "You are NOT conducting an interview. You are NOT collecting data.\n"
-                "You are having a real conversation with someone you care about.\n\n"
-                "How to talk:\n"
-                "- React genuinely to what the user shares before asking anything.\n"
-                "  Show real curiosity, warmth, empathy — match their energy.\n"
-                "- Ask only one thing at a time, woven naturally into your response.\n"
-                "- Never ask generic questions. Ask specifically about what they said.\n"
-                '  Bad: "How did that make you feel?"\n'
-                '  Good: "Wait, your manager said that in front of everyone?"\n'
-                "- If they're excited, be excited with them.\n"
-                "  If they're tired or sad, be gentle and low-key.\n"
-                "- Use casual, warm language. Contractions. Short sentences.\n"
-                "  Write like a friend texting, not a therapist interviewing.\n"
-                "- Follow threads — if they mention something in passing,\n"
-                "  come back to it. Show you were listening.\n"
-                "- If they mention something from a previous day (see RECENT CONTEXT),\n"
-                '  reference it naturally. "Did that presentation end up going well?"\n'
-                "- When the conversation feels naturally complete — the user seems done,\n"
-                "  energy is winding down, they've shared enough — wrap up warmly.\n"
-                "  Don't drag it out. Don't ask one more question just to ask.\n"
-                "- Keep responses short. 2-4 sentences maximum unless the moment calls\n"
-                "  for more. Leave space for the user to talk."
-            )
+            system_prompt = f"""{build_persona_block(persona)}
+
+Your role in this conversation is to talk with the user about their day
+through natural, friendly conversation - not an interview.
+
+How to talk:
+- React genuinely to what the user shares before asking anything.
+- Ask only one thing at a time, woven naturally into your response.
+- Never ask generic questions - ask specifically about what they said.
+- Match the user's energy. Follow threads. Show you were listening.
+- Keep responses short: 2-4 sentences. Leave space for the user.
+- If the conversation winds down naturally, let it. Don't force more.
+"""
 
             # Prune turns to fit in token budget
             # Total input ceiling ~2020 tokens, max response 300, so target input ~1720 tokens

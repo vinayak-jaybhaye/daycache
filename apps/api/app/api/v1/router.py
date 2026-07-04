@@ -13,6 +13,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.collections import router as collections_router
 from app.api.v1.health import router as health_router
 from app.api.v1.journal import days_router, entries_router, moods_router
+from app.api.v1.personas import router as personas_router
 from app.api.v1.search import router as search_router
 
 # from app.api.v1.media import router as media_router  # unmounted — media is internal infrastructure
@@ -39,3 +40,4 @@ router.include_router(search_router, prefix="/search", tags=["search"])
 router.include_router(ai_router, prefix="/ai/summaries", tags=["ai"])
 router.include_router(recall_router, prefix="/recall", tags=["recall"])
 router.include_router(reflect_router, prefix="/reflect", tags=["reflect"])
+router.include_router(personas_router, prefix="/personas", tags=["personas"])
