@@ -143,7 +143,7 @@ class MediaService:
             MediaProcessingStatus.PENDING,
             MediaProcessingStatus.PROCESSING,
         ]:
-            return await MediaService._build_status_response(
+            return await MediaService.build_status_response(
                 media, storage, settings=None
             )
 
@@ -176,7 +176,7 @@ class MediaService:
             _queue_name="media_processing_queue",
         )
 
-        return await MediaService._build_status_response(media, storage, settings=None)
+        return await MediaService.build_status_response(media, storage, settings=None)
 
     @staticmethod
     async def get_media(
@@ -205,7 +205,7 @@ class MediaService:
         media = await repo.get_by_id_for_user(user_id, media_id)
         if media is None:
             raise NotFoundError("Media not found.")
-        return await MediaService._build_status_response(
+        return await MediaService.build_status_response(
             media, storage, settings=settings
         )
 
@@ -278,7 +278,7 @@ class MediaService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    async def _build_status_response(
+    async def build_status_response(
         media: Media,
         storage: StorageBackend,
         settings: Settings | None,

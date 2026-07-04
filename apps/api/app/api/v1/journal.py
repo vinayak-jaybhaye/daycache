@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.api.deps import get_arq_pool, get_current_user, get_db
+from app.api.deps import get_arq_pool, get_current_user, get_db, get_settings
 from app.db.models import User
 from app.modules.journal.schemas import (
     DayResponse,
@@ -23,10 +23,18 @@ from app.modules.journal.schemas import (
     PaginatedJournalEntriesResponse,
 )
 from app.modules.journal.service import JournalService
+from app.modules.media.schemas import (
+    MediaUploadRequest,
+    MediaUploadResponse,
+)
+from app.storage.factory import get_storage
 
 if TYPE_CHECKING:
     from arq import ArqRedis
     from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.core.config import Settings
+    from app.storage.base import StorageBackend
 
 entries_router = APIRouter()
 days_router = APIRouter()
@@ -47,10 +55,14 @@ async def create_entry(
     data: JournalEntryCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage),
+    settings: Settings = Depends(get_settings),
     arq_pool: ArqRedis = Depends(get_arq_pool),
 ) -> JournalEntryResponse:
     """Create a new journal entry under the resolved Day aggregate."""
-    entry = await JournalService.create_entry(db, current_user.id, data)
+    entry = await JournalService.create_entry(
+        db, storage, settings, current_user.id, data
+    )
     with contextlib.suppress(Exception):
         await arq_pool.enqueue_job(
             "process_journal_entry_embeddings",
@@ -74,10 +86,14 @@ async def list_entries(
     is_favorite: bool | None = Query(None, description="Filter by favorite status"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage),
+    settings: Settings = Depends(get_settings),
 ) -> PaginatedJournalEntriesResponse:
     """Retrieve all journal entries matching the filters with pagination."""
     return await JournalService.list_entries(
         db=db,
+        storage=storage,
+        settings=settings,
         user_id=current_user.id,
         limit=limit,
         cursor=cursor,
@@ -96,9 +112,11 @@ async def get_entry(
     id: UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage),
+    settings: Settings = Depends(get_settings),
 ) -> JournalEntryResponse:
     """Retrieve details of a specific journal entry by ID."""
-    return await JournalService.get_entry(db, current_user.id, id)
+    return await JournalService.get_entry(db, storage, settings, current_user.id, id)
 
 
 @entries_router.patch(
@@ -110,11 +128,13 @@ async def update_entry(
     data: JournalEntryUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage),
+    settings: Settings = Depends(get_settings),
     arq_pool: ArqRedis = Depends(get_arq_pool),
 ) -> JournalEntryResponse:
     """Update metadata or rich text content of a journal entry with optimistic locking check."""
     entry, _title_changed, content_changed = await JournalService.update_entry(
-        db, current_user.id, id, data
+        db, storage, settings, current_user.id, id, data
     )
 
     # Trigger background embedding processing if content text is updated
@@ -138,9 +158,10 @@ async def delete_entry(
     id: UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage),
 ) -> None:
     """Soft delete a journal entry by ID."""
-    await JournalService.delete_entry(db, current_user.id, id)
+    await JournalService.delete_entry(db, storage, current_user.id, id)
 
 
 @entries_router.post(
@@ -284,4 +305,79 @@ async def remove_mood_from_entry(
         user_id=current_user.id,
         entry_id=id,
         mood_id=mood_id,
+    )
+
+
+# ==========================================
+# Entry ↔ Media Sub-resource Endpoints
+# ==========================================
+
+
+@entries_router.post(
+    "/{id}/media/upload",
+    response_model=MediaUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def request_entry_media_upload(
+    id: UUID,
+    data: MediaUploadRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage),
+    settings: Settings = Depends(get_settings),
+) -> MediaUploadResponse:
+    """Request a presigned PUT URL to upload a media asset for a journal entry."""
+    return await JournalService.request_media_upload(
+        db=db,
+        storage=storage,
+        settings=settings,
+        user_id=current_user.id,
+        entry_id=id,
+        data=data,
+    )
+
+
+@entries_router.post(
+    "/{id}/media/{media_id}/confirm",
+    response_model=JournalEntryResponse,
+)
+async def confirm_entry_media_upload(
+    id: UUID,
+    media_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage),
+    arq_pool: ArqRedis = Depends(get_arq_pool),
+    settings: Settings = Depends(get_settings),
+) -> JournalEntryResponse:
+    """Confirm the media asset upload and link it to the journal entry."""
+    return await JournalService.confirm_media_upload(
+        db=db,
+        storage=storage,
+        arq_pool=arq_pool,
+        settings=settings,
+        user_id=current_user.id,
+        entry_id=id,
+        media_id=media_id,
+    )
+
+
+@entries_router.delete(
+    "/{id}/media/{media_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_media_from_entry(
+    id: UUID,
+    media_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage),
+) -> None:
+    """Detach the media asset from the journal entry and clean it up from storage."""
+    await JournalService.remove_media_from_entry(
+        db=db,
+        storage=storage,
+        user_id=current_user.id,
+        entry_id=id,
+        media_id=media_id,
     )
