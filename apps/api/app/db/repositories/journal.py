@@ -206,7 +206,11 @@ class JournalRepository(BaseRepository[JournalEntry]):
         """
         stmt = (
             select(JournalEntry)
-            .options(joinedload(JournalEntry.day))
+            .options(
+                joinedload(JournalEntry.day),
+                selectinload(JournalEntry.tags),
+                selectinload(JournalEntry.moods).joinedload(EntryMood.mood),
+            )
             .where(
                 JournalEntry.id == entry_id,
                 JournalEntry.deleted_at.is_(None),

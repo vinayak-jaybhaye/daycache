@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 import httpx
@@ -28,6 +29,10 @@ class LLMProvider(Protocol):
 
     async def generate(self, prompt: str, response_model: type[T]) -> T:
         """Send a prompt to the LLM and return a validated Pydantic model response."""
+        ...
+
+    def stream(self, prompt: str, model: str | None = None) -> AsyncIterator[str]:
+        """Stream the model's response token by token."""
         ...
 
 
@@ -78,6 +83,15 @@ class MockLLMProvider:
                 f"Mock validation failed for model {response_model.__name__}: {e}"
             ) from e
 
+    async def stream(self, prompt: str, model: str | None = None) -> AsyncIterator[str]:
+        logger.info("Mock LLM stream called with prompt length: %d", len(prompt))
+        text = "Mock response: Based on your journal entries, you have been working on various tasks and reflecting on your mood."
+        import asyncio
+
+        for word in text.split(" "):
+            yield word + " "
+            await asyncio.sleep(0.01)
+
 
 class GeminiLLMProvider:
     """Google Gemini LLM provider using direct REST API calls."""
@@ -118,6 +132,55 @@ class GeminiLLMProvider:
                 raise LLMValidationError(
                     f"Validation against schema {response_model.__name__} failed: {e}"
                 ) from e
+
+    async def stream(self, prompt: str, model: str | None = None) -> AsyncIterator[str]:
+        if not self.api_key:
+            raise ValueError("Gemini API key is missing.")
+
+        target_model = model or self.model
+        if model and any(p in model.lower() for p in ["claude-", "gpt-"]):
+            target_model = self.model
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:streamGenerateContent?key={self.api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"maxOutputTokens": 1000},
+        }
+
+        async with (
+            httpx.AsyncClient(timeout=30.0) as client,
+            client.stream("POST", url, json=payload) as response,
+        ):
+            response.raise_for_status()
+            buffer = ""
+            async for chunk in response.aiter_text():
+                buffer += chunk
+                while True:
+                    start_idx = buffer.find("{")
+                    if start_idx == -1:
+                        break
+                    depth = 0
+                    end_idx = -1
+                    for i in range(start_idx, len(buffer)):
+                        if buffer[i] == "{":
+                            depth += 1
+                        elif buffer[i] == "}":
+                            depth -= 1
+                            if depth == 0:
+                                end_idx = i
+                                break
+                    if end_idx == -1:
+                        break
+
+                    obj_str = buffer[start_idx : end_idx + 1]
+                    buffer = buffer[end_idx + 1 :]
+                    try:
+                        data = json.loads(obj_str)
+                        text_part = data["candidates"][0]["content"]["parts"][0]["text"]
+                        if text_part:
+                            yield text_part
+                    except (KeyError, IndexError, json.JSONDecodeError):
+                        continue
 
 
 class OpenAILLMProvider:
@@ -165,6 +228,48 @@ class OpenAILLMProvider:
                     f"Validation against schema {response_model.__name__} failed: {e}"
                 ) from e
 
+    async def stream(self, prompt: str, model: str | None = None) -> AsyncIterator[str]:
+        if not self.api_key:
+            raise ValueError("OpenAI API key is missing.")
+
+        target_model = model or self.model
+        if model and any(p in model.lower() for p in ["claude-", "gemini-"]):
+            target_model = self.model
+
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        payload = {
+            "model": target_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": True,
+            "max_tokens": 1000,
+        }
+
+        async with (
+            httpx.AsyncClient(timeout=30.0) as client,
+            client.stream("POST", url, headers=headers, json=payload) as response,
+        ):
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                if line.startswith("data: "):
+                    data_str = line[len("data: ") :].strip()
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        data_json = json.loads(data_str)
+                        choice = data_json.get("choices", [{}])[0]
+                        delta = choice.get("delta", {})
+                        content = delta.get("content")
+                        if content:
+                            yield content
+                    except Exception:
+                        continue
+
 
 class OllamaLLMProvider:
     """Ollama local LLM provider using direct REST API calls."""
@@ -204,3 +309,32 @@ class OllamaLLMProvider:
                 raise LLMValidationError(
                     f"Validation against schema {response_model.__name__} failed: {e}"
                 ) from e
+
+    async def stream(self, prompt: str, model: str | None = None) -> AsyncIterator[str]:
+        target_model = model or self.model
+        if model and any(p in model.lower() for p in ["claude-", "gpt-", "gemini-"]):
+            target_model = self.model
+
+        url = f"{self.base_url.rstrip('/')}/api/generate"
+        payload = {
+            "model": target_model,
+            "prompt": prompt,
+            "stream": True,
+            "options": {"num_predict": 1000},
+        }
+
+        async with (
+            httpx.AsyncClient(timeout=60.0) as client,
+            client.stream("POST", url, json=payload) as response,
+        ):
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    text_response = data.get("response", "")
+                    if text_response:
+                        yield text_response
+                except json.JSONDecodeError:
+                    continue

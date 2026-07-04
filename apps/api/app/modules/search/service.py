@@ -15,7 +15,7 @@ from uuid import UUID
 
 from sqlalchemy import Float, desc, func, select, type_coerce
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.db.models import Day, EntryMood, JournalEntry
 from app.db.models.ai import Embedding, JournalChunk
@@ -27,6 +27,27 @@ from app.services.embeddings import get_embedding_generator
 class SearchService:
     """Service class encapsulating the search business logic."""
 
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    async def search(
+        self,
+        query: str,
+        user_id: UUID,
+        mode: Literal["instant", "semantic", "hybrid"] = "hybrid",
+        limit: int = 20,
+        context: bool = False,
+    ) -> list[SearchResultItem]:
+        """Wrapper method for Recall to perform search queries using instance db session."""
+        return await self.search_entries(
+            db=self.db,
+            user_id=user_id,
+            query=query,
+            mode=mode,
+            limit=limit,
+            context=context,
+        )
+
     @staticmethod
     async def search_entries(
         db: AsyncSession,
@@ -34,6 +55,7 @@ class SearchService:
         query: str,
         mode: Literal["instant", "semantic", "hybrid"] = "hybrid",
         limit: int = 20,
+        context: bool = False,
     ) -> list[SearchResultItem]:
         """Perform search over journal entries based on the requested mode.
 
@@ -54,18 +76,20 @@ class SearchService:
 
         if mode == "instant":
             return await SearchService._instant_search(
-                db, user_id, cleaned_query, limit
+                db, user_id, cleaned_query, limit, context
             )
         elif mode == "semantic":
             return await SearchService._semantic_search(
-                db, user_id, cleaned_query, limit
+                db, user_id, cleaned_query, limit, context
             )
         else:
-            return await SearchService._hybrid_search(db, user_id, cleaned_query, limit)
+            return await SearchService._hybrid_search(
+                db, user_id, cleaned_query, limit, context
+            )
 
     @staticmethod
     async def _instant_search(
-        db: AsyncSession, user_id: UUID, query: str, limit: int
+        db: AsyncSession, user_id: UUID, query: str, limit: int, context: bool = False
     ) -> list[SearchResultItem]:
         """Full-Text Search (Lexical-only) strategy."""
         ts_query = func.websearch_to_tsquery("english", query)
@@ -107,14 +131,15 @@ class SearchService:
                         entry=JournalEntryResponse.model_validate(entry),
                         score=ranks_map[entry_id],
                         match_type="keyword",
-                        highlight_snippet=None,
+                        highlight_snippet=entry.content_text if context else None,
+                        day_date=entry.day.date if entry.day else None,
                     )
                 )
         return results
 
     @staticmethod
     async def _semantic_search(
-        db: AsyncSession, user_id: UUID, query: str, limit: int
+        db: AsyncSession, user_id: UUID, query: str, limit: int, context: bool = False
     ) -> list[SearchResultItem]:
         """Vector similarity search (Semantic-only) strategy."""
         # 1. Generate query embedding vector using singleton
@@ -173,14 +198,17 @@ class SearchService:
                         entry=JournalEntryResponse.model_validate(entry),
                         score=score,
                         match_type="semantic",
-                        highlight_snippet=content_map[entry_id],
+                        highlight_snippet=entry.content_text
+                        if context
+                        else content_map.get(entry_id),
+                        day_date=entry.day.date if entry.day else None,
                     )
                 )
         return results
 
     @staticmethod
     async def _hybrid_search(
-        db: AsyncSession, user_id: UUID, query: str, limit: int
+        db: AsyncSession, user_id: UUID, query: str, limit: int, context: bool = False
     ) -> list[SearchResultItem]:
         """Hybrid Search combining Full-Text and Vector ranks via Reciprocal Rank Fusion (RRF)."""
         # 1. Generate query embedding vector using singleton
@@ -274,7 +302,10 @@ class SearchService:
 
         entry_ids = [UUID(str(row[0])) for row in rows]
         content_map = {UUID(str(row[0])): row[1] for row in rows}
-        score_map = {UUID(str(row[0])): float(row[2]) for row in rows}
+        # Normalize hybrid RRF score so it falls between 0 and 1:
+        # Max score is rank 1 on both lexical and semantic (1/61 + 1/61 = 2/61)
+        max_rrf = 2.0 / 61.0
+        score_map = {UUID(str(row[0])): float(row[2]) / max_rrf for row in rows}
 
         def get_match_type(
             lex_pos: int | None, sem_pos: int | None
@@ -303,7 +334,10 @@ class SearchService:
                         entry=JournalEntryResponse.model_validate(entry),
                         score=score_map[entry_id],
                         match_type=match_type_map[entry_id],
-                        highlight_snippet=content_map[entry_id],
+                        highlight_snippet=entry.content_text
+                        if context
+                        else content_map.get(entry_id),
+                        day_date=entry.day.date if entry.day else None,
                     )
                 )
         return results
@@ -319,6 +353,7 @@ class SearchService:
             select(JournalEntry)
             .join(Day, JournalEntry.day_id == Day.id)
             .options(
+                joinedload(JournalEntry.day),
                 selectinload(JournalEntry.tags),
                 selectinload(JournalEntry.moods).joinedload(EntryMood.mood),
             )

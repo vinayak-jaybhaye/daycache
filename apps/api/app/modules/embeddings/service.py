@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from datetime import date
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -29,6 +30,24 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingService:
     """Orchestrates text chunking, embedding generation, and status updates."""
+
+    @staticmethod
+    def build_chunk_for_embedding(
+        chunk_text: str,
+        date_val: date,
+        title: str | None,
+        tags: list[str] | None = None,
+        moods: list[str] | None = None,
+    ) -> str:
+        """Prepend a lightweight header to the chunk to anchor it temporally and semantically for embedding generation."""
+        header = f"[{date_val.strftime('%B %d, %Y')}]"
+        if title:
+            header += f" {title}"
+        if tags:
+            header += f" | Tags: {', '.join(tags)}"
+        if moods:
+            header += f" | Moods: {', '.join(moods)}"
+        return f"{header}\n{chunk_text}"
 
     @staticmethod
     def chunk_text(text: str, max_chars: int = 1000, overlap: int = 100) -> list[str]:
@@ -101,8 +120,26 @@ class EmbeddingService:
             chunks = EmbeddingService.chunk_text(text_content)
 
             # 6. Embed chunks in memory using the common interface
+            tags_list = [t.name for t in entry.tags] if entry.tags else None
+            moods_list = (
+                [f"{m.mood.name} (intensity: {m.intensity})" for m in entry.moods]
+                if entry.moods
+                else None
+            )
+
+            prefixed_chunks = [
+                EmbeddingService.build_chunk_for_embedding(
+                    chunk_text=c,
+                    date_val=entry.day.date,
+                    title=entry.title,
+                    tags=tags_list,
+                    moods=moods_list,
+                )
+                for c in chunks
+            ]
+
             generator = EmbeddingGenerator()
-            embeddings = await generator.generate_batch(chunks)
+            embeddings = await generator.generate_batch(prefixed_chunks)
 
             # 7. Write to DB in a single atomic transaction
             # Clear old chunks first (this cascades to embeddings)

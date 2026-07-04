@@ -16,11 +16,12 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_db
 from app.db.enums import EmbeddingStatus
-from app.db.models import User
+from app.db.models import EntryMood, Mood, Tag, User
 from app.db.models.ai import Embedding, JournalChunk
 from app.db.models.journal import Day, JournalEntry
 from app.main import app
 from app.modules.embeddings.service import EmbeddingService
+from app.services.embeddings import EmbeddingGenerator
 
 
 @pytest_asyncio.fixture
@@ -331,3 +332,90 @@ async def test_ollama_embedding_provider() -> None:
         result = await provider.get_embedding("hello")
         assert result == fake_embedding
         assert provider.dimension == 5
+
+
+@pytest.mark.asyncio
+async def test_embedding_pipeline_with_temporal_header(
+    custom_db_session: AsyncSession,
+) -> None:
+    """Test embedding pipeline prepends the correct date, title, tags, and moods to the embedding query."""
+    import datetime
+
+    # 1. Create a user
+    user = User(
+        email=f"test_temporal_{uuid.uuid4()}@example.com",
+        password_hash="fake",
+        display_name="Temporal Tester",
+    )
+    custom_db_session.add(user)
+    await custom_db_session.flush()
+
+    # 2. Create a day
+    test_date = datetime.date(2026, 6, 15)
+    day = Day(user_id=user.id, date=test_date)
+    custom_db_session.add(day)
+    await custom_db_session.flush()
+
+    # 3. Create a journal entry
+    entry = JournalEntry(
+        day_id=day.id,
+        title="Training for Marathon",
+        content_text="First few kilometers felt comfortable.",
+        embedding_status=EmbeddingStatus.PENDING,
+    )
+    custom_db_session.add(entry)
+    await custom_db_session.flush()
+
+    # 4. Associate tag and mood
+    tag = Tag(user_id=user.id, name="running")
+    custom_db_session.add(tag)
+
+    stmt_mood = select(Mood).where(Mood.name == "happy")
+    res_mood = await custom_db_session.execute(stmt_mood)
+    mood = res_mood.scalar_one()
+
+    # Load the entry with tags and moods eager loaded to avoid lazy loading issues
+    stmt_fetch = (
+        select(JournalEntry)
+        .options(selectinload(JournalEntry.tags), selectinload(JournalEntry.moods))
+        .where(JournalEntry.id == entry.id)
+    )
+    res_entry = await custom_db_session.execute(stmt_fetch)
+    entry = res_entry.scalar_one()
+
+    entry.tags.append(tag)
+    entry_mood = EntryMood(journal_entry=entry, mood=mood, intensity=8)
+    custom_db_session.add(entry_mood)
+    await custom_db_session.flush()
+    await custom_db_session.commit()
+
+    # 5. Intercept the call to generate_batch
+    captured_texts = []
+    original_generate_batch = EmbeddingGenerator.generate_batch
+
+    async def mock_generate_batch(self: Any, texts: list[str]) -> list[list[float]]:
+        captured_texts.extend(texts)
+        return await original_generate_batch(self, texts)
+
+    # 6. Run background pipeline
+    with patch.object(EmbeddingGenerator, "generate_batch", mock_generate_batch):
+        await EmbeddingService.process_entry_embeddings(
+            custom_db_session, entry.id, entry.version
+        )
+
+    # 7. Verify the captured text sent to generator
+    assert len(captured_texts) == 1
+    expected_header = "[June 15, 2026] Training for Marathon | Tags: running | Moods: happy (intensity: 8)"
+    expected_full_text = f"{expected_header}\nFirst few kilometers felt comfortable."
+    assert captured_texts[0] == expected_full_text
+
+    # 8. Verify the DB chunk content is unmodified (stays raw chunk text)
+    stmt = (
+        select(JournalEntry)
+        .options(selectinload(JournalEntry.chunks))
+        .where(JournalEntry.id == entry.id)
+    )
+    res = await custom_db_session.execute(stmt)
+    updated_entry = res.scalar_one()
+    assert len(updated_entry.chunks) == 1
+    assert updated_entry.chunks[0].content == "First few kilometers felt comfortable."

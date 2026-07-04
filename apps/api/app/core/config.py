@@ -144,6 +144,12 @@ class Settings(BaseSettings):
     AI_LLM_MODEL: str = "gemini-2.0-flash"
     AI_LLM_API_KEY: SecretStr = SecretStr("")
 
+    # ------------------------------------------------------------------
+    # Recall Feature Settings
+    # ------------------------------------------------------------------
+    RECALL_RELEVANCE_THRESHOLD: float = 0.5
+    RECALL_RATE_LIMIT: int = 20
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -6,6 +6,7 @@ No FastAPI imports — schemas are framework-agnostic.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -20,5 +21,6 @@ class SearchResultItem(BaseModel):
     score: float
     match_type: Literal["keyword", "semantic", "hybrid"]
     highlight_snippet: str | None = None
+    day_date: date | None = None
 
     model_config = ConfigDict(from_attributes=True)

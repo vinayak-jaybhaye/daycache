@@ -13,6 +13,7 @@ from app.db.models.collection import Collection, CollectionEntry
 from app.db.models.journal import Day, JournalEntry
 from app.db.models.media import JournalMedia, Media
 from app.db.models.mood import EntryMood, Mood
+from app.db.models.recall import RecallMessage, RecallSession
 from app.db.models.tag import JournalTag, Tag
 from app.db.models.user import User, UserSettings
 
@@ -31,6 +32,8 @@ __all__ = [
     "Media",
     "Mood",
     "OAuthAccount",
+    "RecallMessage",
+    "RecallSession",
     "Session",
     "Summary",
     "Tag",
