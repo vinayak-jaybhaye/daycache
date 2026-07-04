@@ -472,6 +472,13 @@ class AISummaryService:
         if not content_hash:
             content_hash = hashlib.sha256(prompt_content.encode("utf-8")).hexdigest()
 
+        mood_analysis_dict = None
+        if output.mood_analysis:
+            if hasattr(output.mood_analysis, "model_dump"):
+                mood_analysis_dict = output.mood_analysis.model_dump()
+            elif isinstance(output.mood_analysis, dict):
+                mood_analysis_dict = output.mood_analysis
+
         # 7. Save the summary in the DB (append-only)
         summary_repo = SummaryRepository(db)
         summary = await summary_repo.save(
@@ -482,7 +489,7 @@ class AISummaryService:
             highlights=output.highlights,
             challenges=output.challenges,
             themes=output.themes,
-            mood_analysis=output.mood_analysis,
+            mood_analysis=mood_analysis_dict,
             provider=settings.AI_LLM_PROVIDER,
             model=settings.AI_LLM_MODEL,
             prompt_version=prompt_version,

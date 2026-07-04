@@ -18,6 +18,21 @@ from pydantic import (
 from app.db.enums import SummaryKind, SummaryScope
 
 
+class MoodBreakdownItem(BaseModel):
+    mood: str
+    count: int
+
+
+class MoodAnalysisOutput(BaseModel):
+    trend: str = Field(description="improving / stable / declining / unknown")
+    average: float | None = Field(
+        None,
+        validation_alias=AliasChoices("average", "average_intensity"),
+        description="Average emotional intensity, numeric between 1.0 and 10.0",
+    )
+    breakdown: list[MoodBreakdownItem] = Field(default_factory=list)
+
+
 class SummaryOutput(BaseModel):
     """Structured output expected from the LLM provider."""
 
@@ -40,7 +55,7 @@ class SummaryOutput(BaseModel):
         default_factory=list,
         validation_alias=AliasChoices("themes", "Themes", "theme", "Theme"),
     )
-    mood_analysis: dict[str, Any] | None = Field(
+    mood_analysis: MoodAnalysisOutput | None = Field(
         default=None,
         validation_alias=AliasChoices("mood_analysis", "MoodAnalysis", "mood", "Mood"),
     )

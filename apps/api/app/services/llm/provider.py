@@ -121,7 +121,11 @@ class MockLLMProvider:
 
         # Check for SummaryOutput model (specific feature summary schema)
         if response_model.__name__ == "SummaryOutput":
-            from app.modules.ai.schemas import SummaryOutput
+            from app.modules.ai.schemas import (
+                MoodAnalysisOutput,
+                MoodBreakdownItem,
+                SummaryOutput,
+            )
 
             return cast(
                 T,
@@ -137,14 +141,14 @@ class MockLLMProvider:
                         "Felt minor block on auth configurations",
                     ],
                     themes=["productivity", "health", "focus"],
-                    mood_analysis={
-                        "average_intensity": 7.5,
-                        "trend": "stable",
-                        "breakdown": [
-                            {"mood": "motivated", "count": 2},
-                            {"mood": "tired", "count": 1},
+                    mood_analysis=MoodAnalysisOutput(
+                        average=7.5,
+                        trend="stable",
+                        breakdown=[
+                            MoodBreakdownItem(mood="motivated", count=2),
+                            MoodBreakdownItem(mood="tired", count=1),
                         ],
-                    },
+                    ),
                 ),
             )
 

@@ -37,7 +37,7 @@ def create_engine() -> AsyncEngine:
         pool_size=5,
         max_overflow=10,
         pool_pre_ping=True,
-        echo=settings.APP_ENV == "development",
+        echo=False,
     )
     logger.info("Database engine created", extra={"env": settings.APP_ENV})
     return _engine
