@@ -6,12 +6,15 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.db.enums import EmbeddingStatus
 from app.db.models.journal import Day, JournalEntry
+from app.db.models.mood import EntryMood
+from app.db.models.tag import Tag
 from app.db.repositories.journal import DayRepository, JournalRepository
-from app.db.repositories.tag import TagRepository
 from app.exceptions import ConflictError, NotFoundError, UnprocessableError
 from app.modules.journal.schemas import (
     DayResponse,
@@ -117,7 +120,6 @@ class JournalService:
         """
         day_repo = DayRepository(db)
         entry_repo = JournalRepository(db)
-        tag_repo = TagRepository(db)
 
         # 1. Resolve Day aggregate
         day = await day_repo.get_by_date(user_id, data.date)
@@ -125,9 +127,12 @@ class JournalService:
             day = Day(user_id=user_id, date=data.date)
             day = await day_repo.create(day)
 
-        # 2. Extract plain text representation and calculate word count
+        # 2. Extract plain text representation, compute hash, and calculate word count
         content_text = extract_text_from_rich_content(data.content)
-        word_count = len(content_text.split())
+        word_count = len([t for t in content_text.split() if t])
+        import hashlib
+
+        content_hash = hashlib.sha256(content_text.encode("utf-8")).hexdigest()
 
         # 3. Create entry
         entry = JournalEntry(
@@ -135,27 +140,31 @@ class JournalService:
             title=data.title,
             content=data.content,
             content_text=content_text,
+            content_hash=content_hash,
             word_count=word_count,
             is_favorite=data.is_favorite,
+            moods=[],
         )
 
-        # 4. Resolve and assign tags
-        tags = []
-        for tag_id in data.tag_ids:
-            tag = await tag_repo.get_by_id(tag_id)
-            if tag is None or tag.user_id != user_id:
-                raise NotFoundError(f"Tag with ID '{tag_id}' not found.")
-            tags.append(tag)
-        entry.tags = tags
+        # 4. Resolve and assign tags (batch query)
+        if data.tag_ids:
+            tag_stmt = select(Tag).where(
+                Tag.id.in_(data.tag_ids), Tag.user_id == str(user_id)
+            )
+            tag_res = await db.execute(tag_stmt)
+            tags = tag_res.scalars().all()
+            if len(tags) != len(data.tag_ids):
+                found_ids = {t.id for t in tags}
+                for tag_id in data.tag_ids:
+                    if tag_id not in found_ids:
+                        raise NotFoundError(f"Tag with ID '{tag_id}' not found.")
+            entry.tags = list(tags)
+        else:
+            entry.tags = []
 
         entry = await entry_repo.create(entry)
 
-        # Re-fetch entry with selectinload to avoid lazy-loading
-        from sqlalchemy import select
-        from sqlalchemy.orm import selectinload
-
-        from app.db.models.mood import EntryMood
-
+        # Re-fetch entry with selectinload to restore expired relations after BaseRepository.create's refresh
         stmt = (
             select(JournalEntry)
             .options(
@@ -319,7 +328,7 @@ class JournalService:
     @staticmethod
     async def update_entry(
         db: AsyncSession, user_id: UUID, entry_id: UUID, data: JournalEntryUpdate
-    ) -> tuple[JournalEntryResponse, bool]:
+    ) -> tuple[JournalEntryResponse, bool, bool]:
         """Update properties of an existing entry with optimistic locking check.
 
         Args:
@@ -329,18 +338,17 @@ class JournalService:
             data: Schema updates.
 
         Returns:
-            The updated JournalEntryResponse.
+            The updated JournalEntryResponse, title_changed, and content_changed flags.
         """
         day_repo = DayRepository(db)
-        tag_repo = TagRepository(db)
 
-        # 1. Fetch entry
-        from sqlalchemy import select
-        from sqlalchemy.orm import selectinload
-
+        # 1. Fetch entry (with tags and moods pre-loaded)
         stmt = (
             select(JournalEntry)
-            .options(selectinload(JournalEntry.tags))
+            .options(
+                selectinload(JournalEntry.tags),
+                selectinload(JournalEntry.moods).joinedload(EntryMood.mood),
+            )
             .where(JournalEntry.id == entry_id, JournalEntry.deleted_at.is_(None))
         )
         res = await db.execute(stmt)
@@ -359,17 +367,24 @@ class JournalService:
             raise ConflictError("The entry has been updated by another client.")
 
         # 4. Modify fields
+        title_changed = False
         content_changed = False
+
         if data.title is not None and data.title != entry.title:
             entry.title = data.title
-            content_changed = True
+            title_changed = True
 
         if data.content is not None:
             content_text = extract_text_from_rich_content(data.content)
             if content_text != entry.content_text:
                 entry.content = data.content
                 entry.content_text = content_text
-                entry.word_count = len(content_text.split())
+                import hashlib
+
+                entry.content_hash = hashlib.sha256(
+                    content_text.encode("utf-8")
+                ).hexdigest()
+                entry.word_count = len([t for t in content_text.split() if t])
                 content_changed = True
 
         if content_changed:
@@ -379,13 +394,20 @@ class JournalService:
             entry.is_favorite = data.is_favorite
 
         if data.tag_ids is not None:
-            tags = []
-            for tag_id in data.tag_ids:
-                tag = await tag_repo.get_by_id(tag_id)
-                if tag is None or tag.user_id != user_id:
-                    raise NotFoundError(f"Tag with ID '{tag_id}' not found.")
-                tags.append(tag)
-            entry.tags = tags
+            if data.tag_ids:
+                tag_stmt = select(Tag).where(
+                    Tag.id.in_(data.tag_ids), Tag.user_id == str(user_id)
+                )
+                tag_res = await db.execute(tag_stmt)
+                tags = tag_res.scalars().all()
+                if len(tags) != len(data.tag_ids):
+                    found_ids = {t.id for t in tags}
+                    for tag_id in data.tag_ids:
+                        if tag_id not in found_ids:
+                            raise NotFoundError(f"Tag with ID '{tag_id}' not found.")
+                entry.tags = list(tags)
+            else:
+                entry.tags = []
 
         # 5. Flush and verify StaleDataErrors
         try:
@@ -393,22 +415,18 @@ class JournalService:
         except StaleDataError as e:
             raise ConflictError("The entry has been updated by another client.") from e
 
-        # Re-fetch entry with selectinload to avoid lazy-loading
-        from sqlalchemy import select
-        from sqlalchemy.orm import selectinload
-
-        from app.db.models.mood import EntryMood
-
-        stmt = (
-            select(JournalEntry)
-            .options(
-                selectinload(JournalEntry.tags),
-                selectinload(JournalEntry.moods).joinedload(EntryMood.mood),
-            )
-            .where(JournalEntry.id == entry_id)
+        # Query generated columns directly to avoid expiring loaded relations
+        res = await db.execute(
+            select(
+                JournalEntry.updated_at,
+                JournalEntry.search_vector,
+                JournalEntry.version,
+            ).where(JournalEntry.id == entry.id)
         )
-        res = await db.execute(stmt)
-        entry = res.scalar_one()
+        updated_at, search_vector, version = res.one()
+        entry.updated_at = updated_at
+        entry.search_vector = search_vector
+        entry.version = version
 
         return (
             JournalEntryResponse(
@@ -433,6 +451,7 @@ class JournalService:
                     for m in entry.moods
                 ],
             ),
+            title_changed,
             content_changed,
         )
 

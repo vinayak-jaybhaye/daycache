@@ -113,11 +113,11 @@ async def update_entry(
     arq_pool: ArqRedis = Depends(get_arq_pool),
 ) -> JournalEntryResponse:
     """Update metadata or rich text content of a journal entry with optimistic locking check."""
-    entry, content_changed = await JournalService.update_entry(
+    entry, _title_changed, content_changed = await JournalService.update_entry(
         db, current_user.id, id, data
     )
 
-    # Trigger background embedding processing if title or content text is updated
+    # Trigger background embedding processing if content text is updated
     if content_changed:
         with contextlib.suppress(Exception):
             await arq_pool.enqueue_job(

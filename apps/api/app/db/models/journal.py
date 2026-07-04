@@ -85,6 +85,7 @@ class JournalEntry(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
         nullable=False,
     )
     content_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     word_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     search_vector: Mapped[Any] = mapped_column(TSVECTOR, nullable=True)
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

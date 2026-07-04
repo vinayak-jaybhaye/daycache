@@ -20,6 +20,13 @@ from arq import cron
 from arq.connections import RedisSettings
 
 from app.core.config import get_settings
+from app.modules.ai.tasks import (
+    generate_day_summary_task,
+    generate_entry_summary_task,
+    generate_monthly_summaries_task,
+    generate_weekly_summaries_task,
+    generate_yearly_summaries_task,
+)
 from app.storage.factory import get_storage
 from app.workers.embedding import process_journal_entry_embeddings
 from app.workers.media import clean_stale_media, process_media
@@ -87,6 +94,53 @@ class EmbeddingWorkerSettings:
 
     functions: ClassVar = [process_journal_entry_embeddings]
     queue_name = "embedding_queue"
+
+    on_startup = startup
+    on_shutdown = shutdown
+    on_job_start = job_start
+    on_job_end = job_end
+
+    max_jobs = 10
+    redis_settings = RedisSettings.from_dsn(str(get_settings().REDIS_URL))
+
+
+class AIWorkerSettings:
+    """ARQ worker configuration for AI Summaries and scheduling.
+
+    Start worker with:
+        uv run arq app.workers.arq_settings.AIWorkerSettings
+    """
+
+    functions: ClassVar = [
+        generate_entry_summary_task,
+        generate_day_summary_task,
+        generate_weekly_summaries_task,
+        generate_monthly_summaries_task,
+        generate_yearly_summaries_task,
+    ]
+    queue_name = "ai_queue"
+
+    cron_jobs: ClassVar = [
+        cron(
+            generate_weekly_summaries_task,
+            weekday=0,
+            hour=0,
+            minute=0,
+        ),
+        cron(
+            generate_monthly_summaries_task,
+            day=1,
+            hour=0,
+            minute=0,
+        ),
+        cron(
+            generate_yearly_summaries_task,
+            month=1,
+            day=1,
+            hour=0,
+            minute=0,
+        ),
+    ]
 
     on_startup = startup
     on_shutdown = shutdown

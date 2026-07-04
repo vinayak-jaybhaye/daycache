@@ -137,6 +137,13 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: SecretStr = SecretStr("")
     OLLAMA_BASE_URL: str = "http://localhost:11434"
 
+    # ------------------------------------------------------------------
+    # AI LLM
+    # ------------------------------------------------------------------
+    AI_LLM_PROVIDER: Literal["mock", "openai", "gemini", "ollama"] = "mock"
+    AI_LLM_MODEL: str = "gemini-2.0-flash"
+    AI_LLM_API_KEY: SecretStr = SecretStr("")
+
 
 @lru_cache
 def get_settings() -> Settings:

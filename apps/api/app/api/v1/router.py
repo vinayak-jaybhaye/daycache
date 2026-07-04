@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.api.v1.ai import router as ai_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.collections import router as collections_router
 from app.api.v1.health import router as health_router
@@ -33,4 +34,4 @@ router.include_router(days_router, prefix="/days", tags=["days"])
 router.include_router(moods_router, prefix="/moods", tags=["moods"])
 # router.include_router(media_router, prefix="/media", tags=["media"])  # unmounted
 router.include_router(search_router, prefix="/search", tags=["search"])
-# router.include_router(ai_router, prefix="/ai", tags=["ai"])
+router.include_router(ai_router, prefix="/ai/summaries", tags=["ai"])

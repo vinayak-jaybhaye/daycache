@@ -148,6 +148,7 @@ class Summary(UUIDMixin, Base):
     challenges: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     themes: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     mood_analysis: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     provider: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[str] = mapped_column(Text, nullable=False)

@@ -30,6 +30,7 @@ os.environ.setdefault(
 os.environ.setdefault("SECRET_KEY", "test-secret-key-that-is-long-enough-32chars!")
 os.environ.setdefault("AI_EMBEDDING_PROVIDER", "mock")
 os.environ.setdefault("AI_EMBEDDING_MODEL", "mock-model")
+os.environ.setdefault("AI_LLM_PROVIDER", "mock")
 
 from app.api.deps import get_db
 from app.main import app

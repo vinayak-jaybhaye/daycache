@@ -17,6 +17,7 @@ from app.db.repositories.media import MediaRepository
 from app.db.repositories.mood import MoodRepository
 from app.db.repositories.session import SessionRepository
 from app.db.repositories.settings import SettingsRepository
+from app.db.repositories.summary import SummaryRepository
 from app.db.repositories.tag import TagRepository
 from app.db.repositories.user import UserRepository
 
@@ -34,6 +35,7 @@ __all__ = [
     "MoodRepository",
     "SessionRepository",
     "SettingsRepository",
+    "SummaryRepository",
     "TagRepository",
     "UserRepository",
 ]

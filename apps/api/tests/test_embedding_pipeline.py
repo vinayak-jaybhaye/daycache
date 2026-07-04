@@ -322,7 +322,7 @@ async def test_ollama_embedding_provider() -> None:
             def raise_for_status(self) -> None:
                 pass
 
-            def json(self) -> dict:
+            def json(self) -> dict[str, Any]:
                 return {"embedding": fake_embedding}
 
         return FakeResponse()
