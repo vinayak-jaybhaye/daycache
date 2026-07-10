@@ -322,7 +322,9 @@ async def test_ollama_embedding_provider() -> None:
     mock_response.embeddings = [fake_embedding]
 
     with patch.object(
-        provider._client, "embed", return_value=mock_response
+        provider._client,
+        "embed",
+        return_value=mock_response,  # pyright: ignore[reportPrivateUsage]
     ) as mock_embed:
         result = await provider.get_embedding("hello")
         assert result == fake_embedding

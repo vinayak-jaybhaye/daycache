@@ -508,14 +508,14 @@ async def test_gemini_provider_sdk_integration() -> None:
     mock_response = MagicMock()
     mock_response.text = '{"enough_content": "YES"}'
 
-    provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+    provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)  # pyright: ignore[reportPrivateUsage]
 
     result = await provider.generate("hello", ReflectEvaluation)
     assert result.enough_content == "YES"
 
     # Verify exact arguments passed to the SDK
-    provider._client.aio.models.generate_content.assert_called_once()
-    kwargs = provider._client.aio.models.generate_content.call_args[1]
+    provider._client.aio.models.generate_content.assert_called_once()  # pyright: ignore[reportPrivateUsage]
+    kwargs = provider._client.aio.models.generate_content.call_args[1]  # pyright: ignore[reportPrivateUsage]
     assert kwargs["model"] == "gemini-2.0-flash"
 
     # Test Embedding provider
@@ -529,7 +529,7 @@ async def test_gemini_provider_sdk_integration() -> None:
     mock_embed_response = MagicMock()
     mock_embed_response.embeddings = [mock_embed_val]
 
-    embed_provider._client.aio.models.embed_content = AsyncMock(
+    embed_provider._client.aio.models.embed_content = AsyncMock(  # pyright: ignore[reportPrivateUsage]
         return_value=mock_embed_response
     )
 
@@ -537,6 +537,6 @@ async def test_gemini_provider_sdk_integration() -> None:
     assert embeddings == [0.1, 0.2, 0.3]
 
     # Verify exact arguments passed to the SDK
-    embed_provider._client.aio.models.embed_content.assert_called_once()
-    kwargs_embed = embed_provider._client.aio.models.embed_content.call_args[1]
+    embed_provider._client.aio.models.embed_content.assert_called_once()  # pyright: ignore[reportPrivateUsage]
+    kwargs_embed = embed_provider._client.aio.models.embed_content.call_args[1]  # pyright: ignore[reportPrivateUsage]
     assert kwargs_embed["model"] == "text-embedding-004"
