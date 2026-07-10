@@ -133,12 +133,12 @@ async def test_recall_endpoint_flow(
 async def test_recall_message_too_short_rejected(
     async_client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Sending a message shorter than 10 characters returns 422 and does not save anything."""
+    """Sending an empty message returns 422 and does not save anything."""
     await register_and_login(async_client, "recall_short@example.com")
 
     res = await async_client.post(
         "/api/v1/recall/messages",
-        json={"content": "Short"},
+        json={"content": ""},
     )
     assert res.status_code == 422
 

@@ -21,7 +21,7 @@ _LANGUAGE_RE = r"^[a-z]{2,3}$"
 _VALID_TIMEZONES: frozenset[str] = frozenset(zoneinfo.available_timezones())
 
 # Closed set of UI themes supported by the client.
-Theme = Literal["light", "dark", "system"]
+Theme = Literal["light", "dark", "system", "morning", "midnight", "forest", "cinematic"]
 
 
 class SettingsResponse(BaseModel):

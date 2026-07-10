@@ -32,10 +32,10 @@ class RecallService:
     ) -> AsyncIterator[str]:
         """Validate input, manage session/messages, retrieve context, build prompts, and stream responses."""
         # 1. Validate content length
-        if len(content) < 10:
+        if len(content) < 1:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Message must be at least 10 characters.",
+                detail="Message must be at least 1 character.",
             )
 
         settings = get_settings()
@@ -235,6 +235,7 @@ Rules:
                         "entry_title": r.entry.title,
                         "day_date": r.day_date.isoformat() if r.day_date else None,
                         "score": round(float(r.score), 4),
+                        "snippet": r.highlight_snippet,
                     }
                 )
 

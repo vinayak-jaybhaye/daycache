@@ -22,6 +22,7 @@ async def search_entries(
         "hybrid", description="Search mode to execute"
     ),
     limit: int = Query(20, ge=1, le=100, description="Max results limit"),
+    skip: int = Query(0, ge=0, description="Pagination skip offset"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[SearchResultItem]:
@@ -32,4 +33,5 @@ async def search_entries(
         query=q,
         mode=mode,
         limit=limit,
+        skip=skip,
     )

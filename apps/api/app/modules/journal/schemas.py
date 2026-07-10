@@ -105,6 +105,7 @@ class JournalEntryResponse(BaseModel):
 
     id: UUID
     day_id: UUID
+    date: date_type
     title: str | None
     content: dict[str, Any]
     content_text: str | None
@@ -130,6 +131,7 @@ class JournalEntryResponse(BaseModel):
             d: dict[str, Any] = {
                 "id": data.id,
                 "day_id": data.day_id,
+                "date": data.day.date,
                 "title": data.title,
                 "content": data.content,
                 "content_text": data.content_text,
@@ -142,7 +144,15 @@ class JournalEntryResponse(BaseModel):
             if "tags" in data.__dict__:
                 d["tags"] = data.tags
             if "moods" in data.__dict__:
-                d["moods"] = data.moods
+                d["moods"] = [
+                    {
+                        "id": m.mood.id,
+                        "name": m.mood.name,
+                        "color": m.mood.color,
+                        "intensity": m.intensity,
+                    }
+                    for m in data.moods
+                ]
             if "media" in data.__dict__:
                 d["media"] = data.media
             return d

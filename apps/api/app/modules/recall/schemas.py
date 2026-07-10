@@ -15,6 +15,7 @@ class RetrievedEntryMetadata(BaseModel):
     entry_title: str | None = None
     day_date: date
     score: float
+    snippet: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -45,6 +46,6 @@ class MessageCreate(BaseModel):
 
     content: str = Field(
         ...,
-        min_length=10,
-        description="The content of the query to Recall. Must be at least 10 characters.",
+        min_length=1,
+        description="The content of the query to Recall. Must be at least 1 character.",
     )

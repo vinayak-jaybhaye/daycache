@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.db.enums import EmbeddingStatus
@@ -216,6 +216,7 @@ class JournalService:
         stmt = (
             select(JournalEntry)
             .options(
+                joinedload(JournalEntry.day),
                 selectinload(JournalEntry.tags),
                 selectinload(JournalEntry.moods).joinedload(EntryMood.mood),
             )
@@ -231,6 +232,7 @@ class JournalService:
         return JournalEntryResponse(
             id=entry.id,
             day_id=entry.day_id,
+            date=entry.day.date,
             title=entry.title,
             content=entry.content,
             content_text=entry.content_text,
@@ -285,6 +287,7 @@ class JournalService:
         return JournalEntryResponse(
             id=entry.id,
             day_id=entry.day_id,
+            date=entry.day.date,
             title=entry.title,
             content=entry.content,
             content_text=entry.content_text,
@@ -372,6 +375,7 @@ class JournalService:
                 JournalEntryResponse(
                     id=e.id,
                     day_id=e.day_id,
+                    date=e.day.date,
                     title=e.title,
                     content=e.content,
                     content_text=e.content_text,
@@ -428,6 +432,7 @@ class JournalService:
         stmt = (
             select(JournalEntry)
             .options(
+                joinedload(JournalEntry.day),
                 selectinload(JournalEntry.tags),
                 selectinload(JournalEntry.moods).joinedload(EntryMood.mood),
             )
@@ -575,6 +580,7 @@ class JournalService:
             JournalEntryResponse(
                 id=entry.id,
                 day_id=entry.day_id,
+                date=entry.day.date,
                 title=entry.title,
                 content=entry.content,
                 content_text=entry.content_text,
@@ -1033,6 +1039,7 @@ class JournalService:
         return JournalEntryResponse(
             id=entry.id,
             day_id=entry.day_id,
+            date=entry.day.date,
             title=entry.title,
             content=entry.content,
             content_text=entry.content_text,

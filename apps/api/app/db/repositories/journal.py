@@ -183,6 +183,7 @@ class JournalRepository(BaseRepository[JournalEntry]):
             select(JournalEntry)
             .join(Day, JournalEntry.day_id == Day.id)
             .options(
+                joinedload(JournalEntry.day),
                 selectinload(JournalEntry.tags),
                 selectinload(JournalEntry.moods).joinedload(EntryMood.mood),
             )

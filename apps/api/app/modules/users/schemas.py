@@ -47,7 +47,14 @@ class AvatarUploadRequest(BaseModel):
     """
 
     _ALLOWED_MIMES: ClassVar[frozenset[str]] = frozenset(
-        {"image/jpeg", "image/png", "image/webp"}
+        {
+            "image/jpeg",
+            "image/jpg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+            "image/avif",
+        }
     )
     _MAX_BYTES: ClassVar[int] = 5 * 1024 * 1024  # 5 MB
 

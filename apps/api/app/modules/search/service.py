@@ -55,6 +55,7 @@ class SearchService:
         query: str,
         mode: Literal["instant", "semantic", "hybrid"] = "hybrid",
         limit: int = 20,
+        skip: int = 0,
         context: bool = False,
     ) -> list[SearchResultItem]:
         """Perform search over journal entries based on the requested mode.
@@ -65,6 +66,7 @@ class SearchService:
             query: The search query string.
             mode: The search mode ("instant", "semantic", "hybrid").
             limit: The maximum number of results to return.
+            skip: The number of results to skip (pagination).
 
         Returns:
             A list of SearchResultItem schemas.
@@ -76,20 +78,25 @@ class SearchService:
 
         if mode == "instant":
             return await SearchService._instant_search(
-                db, user_id, cleaned_query, limit, context
+                db, user_id, cleaned_query, limit, skip, context
             )
         elif mode == "semantic":
             return await SearchService._semantic_search(
-                db, user_id, cleaned_query, limit, context
+                db, user_id, cleaned_query, limit, skip, context
             )
         else:
             return await SearchService._hybrid_search(
-                db, user_id, cleaned_query, limit, context
+                db, user_id, cleaned_query, limit, skip, context
             )
 
     @staticmethod
     async def _instant_search(
-        db: AsyncSession, user_id: UUID, query: str, limit: int, context: bool = False
+        db: AsyncSession,
+        user_id: UUID,
+        query: str,
+        limit: int,
+        skip: int,
+        context: bool = False,
     ) -> list[SearchResultItem]:
         """Full-Text Search (Lexical-only) strategy."""
         ts_query = func.websearch_to_tsquery("english", query)
@@ -106,7 +113,8 @@ class SearchService:
                 JournalEntry.deleted_at.is_(None),
                 JournalEntry.search_vector.op("@@")(ts_query),
             )
-            .order_by(desc("rank"))
+            .order_by(desc("rank"), JournalEntry.id.asc())
+            .offset(skip)
             .limit(limit)
         )
         res = await db.execute(stmt)
@@ -139,7 +147,12 @@ class SearchService:
 
     @staticmethod
     async def _semantic_search(
-        db: AsyncSession, user_id: UUID, query: str, limit: int, context: bool = False
+        db: AsyncSession,
+        user_id: UUID,
+        query: str,
+        limit: int,
+        skip: int,
+        context: bool = False,
     ) -> list[SearchResultItem]:
         """Vector similarity search (Semantic-only) strategy."""
         # 1. Generate query embedding vector using singleton
@@ -170,7 +183,8 @@ class SearchService:
         stmt = (
             select(subq.c.journal_entry_id, subq.c.content, subq.c.distance)
             .where(subq.c.rn == 1)
-            .order_by(subq.c.distance.asc())
+            .order_by(subq.c.distance.asc(), subq.c.journal_entry_id.asc())
+            .offset(skip)
             .limit(limit)
         )
         res = await db.execute(stmt)
@@ -208,7 +222,12 @@ class SearchService:
 
     @staticmethod
     async def _hybrid_search(
-        db: AsyncSession, user_id: UUID, query: str, limit: int, context: bool = False
+        db: AsyncSession,
+        user_id: UUID,
+        query: str,
+        limit: int,
+        skip: int,
+        context: bool = False,
     ) -> list[SearchResultItem]:
         """Hybrid Search combining Full-Text and Vector ranks via Reciprocal Rank Fusion (RRF)."""
         # 1. Generate query embedding vector using singleton
@@ -216,6 +235,7 @@ class SearchService:
         query_vector = await generator.generate(query)
 
         ts_query = func.websearch_to_tsquery("english", query)
+        inner_limit = max(100, skip + limit)
 
         # 2. Build lexical ranking query
         lexical_cte = (
@@ -233,7 +253,7 @@ class SearchService:
                 JournalEntry.deleted_at.is_(None),
                 JournalEntry.search_vector.op("@@")(ts_query),
             )
-            .limit(100)
+            .limit(inner_limit)
         ).cte("lexical_search")
 
         # 3. Build semantic ranking query
@@ -267,7 +287,7 @@ class SearchService:
                 .label("pos"),
             )
             .where(semantic_subq.c.rn == 1)
-            .limit(100)
+            .limit(inner_limit)
         ).cte("semantic_search")
 
         # 4. Reciprocal Rank Fusion (RRF) Join
@@ -276,9 +296,13 @@ class SearchService:
             + func.coalesce(1.0 / (60 + semantic_cte.c.pos), 0.0)
         ).label("rrf_score")
 
+        entry_id_col = func.coalesce(lexical_cte.c.id, semantic_cte.c.id).label(
+            "entry_id"
+        )
+
         stmt = (
             select(
-                func.coalesce(lexical_cte.c.id, semantic_cte.c.id).label("entry_id"),
+                entry_id_col,
                 semantic_cte.c.content.label("highlight_snippet"),
                 rrf_score,
                 # Track matching types
@@ -292,7 +316,8 @@ class SearchService:
                     full=True,
                 )
             )
-            .order_by(desc("rrf_score"))
+            .order_by(desc("rrf_score"), entry_id_col.asc())
+            .offset(skip)
             .limit(limit)
         )
         res = await db.execute(stmt)
@@ -356,6 +381,7 @@ class SearchService:
                 joinedload(JournalEntry.day),
                 selectinload(JournalEntry.tags),
                 selectinload(JournalEntry.moods).joinedload(EntryMood.mood),
+                selectinload(JournalEntry.media),
             )
             .where(
                 JournalEntry.id.in_(entry_ids),

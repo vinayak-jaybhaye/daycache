@@ -39,7 +39,7 @@ app = FastAPI(
 # 1. CORS — outermost so preflight requests are handled before any other logic.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[str(origin) for origin in settings.CORS_ORIGINS],
+    allow_origins=[str(origin).rstrip("/") for origin in settings.CORS_ORIGINS],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
