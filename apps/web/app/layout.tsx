@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "@/styles/globals.css";
+import { ThemeProvider } from "@/providers/ThemeProvider";
+import { ClientShell } from "@/components/ClientShell";
 
 export const metadata: Metadata = {
   title: "DayCache",
@@ -13,7 +15,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full">
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full">
+        <ThemeProvider>
+          <ClientShell>{children}</ClientShell>
+        </ThemeProvider>
+      </body>
     </html>
   );
 }
