@@ -15,4 +15,10 @@ awslocal s3api create-bucket \
   --region "${REGION}" \
   $([ "${REGION}" != "us-east-1" ] && echo "--create-bucket-configuration LocationConstraint=${REGION}" || true)
 
+echo "[init-s3] Configuring CORS for bucket s3://${BUCKET}"
+
+awslocal s3api put-bucket-cors \
+  --bucket "${BUCKET}" \
+  --cors-configuration '{"CORSRules": [{"AllowedHeaders": ["*"], "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"], "AllowedOrigins": ["*"], "ExposeHeaders": ["ETag"]}]}'
+
 echo "[init-s3] Bucket s3://${BUCKET} ready."

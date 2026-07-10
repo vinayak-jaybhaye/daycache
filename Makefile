@@ -39,6 +39,21 @@ dev.web: ## Start the Next.js dev server
 dev.api: ## Start the FastAPI dev server (hot-reload)
 	$(UV_API) uvicorn app.main:app --reload --port 8000
 
+dev.worker.media:
+	$(UV_API) arq app.workers.arq_settings.MediaWorkerSettings
+
+dev.worker.embedding:
+	$(UV_API) arq app.workers.arq_settings.EmbeddingWorkerSettings
+
+dev.worker.ai:
+	$(UV_API) arq app.workers.arq_settings.AIWorkerSettings
+
+dev.workers: ## Start all three background workers in parallel
+	$(MAKE) -j3 dev.worker.media dev.worker.embedding dev.worker.ai
+
+dev.all: ## Start the FastAPI server and all workers in parallel
+	$(MAKE) -j4 dev.api dev.worker.media dev.worker.embedding dev.worker.ai
+
 dev.infra: ## Start local infrastructure (Postgres, Redis) in the background
 	$(DOCKER) up -d
 
@@ -97,6 +112,9 @@ db.reset: ## Drop and recreate the database, then run all migrations
 	$(DOCKER) exec postgres psql -U daycache -c "CREATE DATABASE daycache;" postgres
 	$(MAKE) db.migrate
 	@echo "✅  Database reset complete."
+
+db.seed: ## Seed the database with sample data (usage: make db.seed COUNT=1000)
+	$(UV_API) python seed_db.py $(COUNT)
 
 # ---------------------------------------------------------------------------
 # Infrastructure

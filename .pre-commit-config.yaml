@@ -56,3 +56,16 @@ repos:
         files: ^apps/web/
         additional_dependencies: []
         pass_filenames: true
+
+  # ---------------------------------------------------------------------------
+  # Python — Pyright (type check)
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        language: system
+        entry: bash -c 'cd apps/api && uv run pyright'
+        types: [python]
+        files: ^apps/api/
+        pass_filenames: false
