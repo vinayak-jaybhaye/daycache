@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-import pgvector
 import sqlalchemy as sa
 from alembic import op
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
@@ -579,9 +579,7 @@ def upgrade() -> None:
         sa.Column("chunk_id", sa.Uuid(), nullable=False),
         sa.Column("provider", sa.Text(), nullable=False),
         sa.Column("model", sa.Text(), nullable=False),
-        sa.Column(
-            "embedding", pgvector.sqlalchemy.vector.VECTOR(dim=1536), nullable=False
-        ),
+        sa.Column("embedding", Vector(dim=1536), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

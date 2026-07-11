@@ -3,6 +3,7 @@ import random
 import sys
 from datetime import date, datetime, time, timedelta
 
+from arq import ArqRedis
 from sqlalchemy.future import select
 
 from app.core.security import hash_password
@@ -209,7 +210,7 @@ async def seed(num_entries: int, embed_entries: bool = False):
         # Pick a random set of days to have entries
         total_days = (end_date - start_date).days
 
-        arq_pool = None
+        arq_pool: ArqRedis | None = None
         if embed_entries:
             from app.api.deps import get_arq_pool
 

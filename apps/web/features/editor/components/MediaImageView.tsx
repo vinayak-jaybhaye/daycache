@@ -28,7 +28,8 @@ export const MediaImageView: React.FC<ReactNodeViewProps> = ({
 
   // Find if there's an active upload at this node's position
   const uploadPositions = (
-    (editor.storage as Record<string, unknown>).mediaImage as MediaImageStorage | undefined
+    (editor.storage as unknown as Record<string, unknown>).mediaImage as
+      MediaImageStorage | undefined
   )?.uploadPositions;
   const uploads = useUploadStore((state) => state.uploads);
 
@@ -49,8 +50,10 @@ export const MediaImageView: React.FC<ReactNodeViewProps> = ({
 
   // Resolve media metadata from resolver
   const resolver =
-    ((editor.storage as Record<string, unknown>).mediaImage as MediaImageStorage | undefined)
-      ?.resolver ?? null;
+    (
+      (editor.storage as unknown as Record<string, unknown>).mediaImage as
+        MediaImageStorage | undefined
+    )?.resolver ?? null;
   const [resolved, setResolved] = React.useState<MediaMetadata | null>(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 
+from arq import ArqRedis
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -110,7 +111,7 @@ async def get_current_user(
 # ---------------------------------------------------------------------------
 
 
-async def get_arq_pool() -> object:
+async def get_arq_pool() -> ArqRedis:
     """Return a shared ARQ Redis pool for enqueueing background jobs.
 
     Creates a new pool connection per request.  In production this should

@@ -103,7 +103,7 @@ export const MediaImage = Node.create<MediaImageOptions, MediaImageStorage>({
   },
 
   addProseMirrorPlugins() {
-    const extensionStorage = (this.editor.storage as Record<string, unknown>)
+    const extensionStorage = (this.editor.storage as unknown as Record<string, unknown>)
       .mediaImage as MediaImageStorage;
 
     return [

@@ -1,5 +1,5 @@
 import { Extension } from "@tiptap/core";
-import Suggestion from "@tiptap/suggestion";
+import Suggestion, { type SuggestionProps, type SuggestionKeyDownProps } from "@tiptap/suggestion";
 import { ReactRenderer } from "@tiptap/react";
 import tippy, { Instance } from "tippy.js";
 import { SlashCommandList, SlashCommandListRef } from "../components/SlashCommandList";
@@ -86,9 +86,7 @@ export function getSlashSuggestionConfig() {
       let popup: Instance[];
 
       return {
-        onStart: (
-          props: Record<string, unknown> & { editor: Editor; clientRect?: () => DOMRect },
-        ) => {
+        onStart: (props: SuggestionProps) => {
           component = new ReactRenderer(SlashCommandList, {
             props,
             editor: props.editor,
@@ -98,20 +96,24 @@ export function getSlashSuggestionConfig() {
             return;
           }
 
-          popup = tippy("body", {
-            getReferenceClientRect: props.clientRect,
-            appendTo: () => document.body,
-            content: component.element,
-            showOnCreate: true,
-            interactive: true,
-            trigger: "manual",
-            placement: "bottom-start",
-            theme: "light",
-            animation: "shift-away",
-          });
+          const clientRect = props.clientRect;
+
+          popup = [
+            tippy(document.body, {
+              getReferenceClientRect: () => clientRect?.() ?? new DOMRect(),
+              appendTo: () => document.body,
+              content: component.element,
+              showOnCreate: true,
+              interactive: true,
+              trigger: "manual",
+              placement: "bottom-start",
+              theme: "light",
+              animation: "shift-away",
+            }),
+          ];
         },
 
-        onUpdate(props: Record<string, unknown> & { clientRect?: () => DOMRect }) {
+        onUpdate(props: SuggestionProps) {
           if (!component) return;
           component.updateProps(props);
 
@@ -120,11 +122,11 @@ export function getSlashSuggestionConfig() {
           }
 
           popup[0].setProps({
-            getReferenceClientRect: props.clientRect,
+            getReferenceClientRect: () => props.clientRect?.() ?? new DOMRect(),
           });
         },
 
-        onKeyDown(props: { event: KeyboardEvent; [key: string]: unknown }) {
+        onKeyDown(props: SuggestionKeyDownProps) {
           if (props.event.key === "Escape" && popup?.[0]) {
             popup[0].hide();
             return true;

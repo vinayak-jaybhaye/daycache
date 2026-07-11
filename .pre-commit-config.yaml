@@ -37,11 +37,8 @@ repos:
       - id: prettier
         name: prettier
         language: node
-        entry: bash -c 'cd apps/web && pnpm exec prettier --write "${@#apps/web/}"' --
-        types_or: [javascript, jsx, ts, tsx, css, json, markdown, yaml]
-        files: ^apps/web/
-        additional_dependencies: []
-        pass_filenames: true
+        entry: bash -c 'cd apps/web && pnpm exec prettier --write .'
+        pass_filenames: false
 
   # ---------------------------------------------------------------------------
   # TypeScript — ESLint (lint)
@@ -51,11 +48,19 @@ repos:
       - id: eslint
         name: eslint
         language: node
-        entry: bash -c 'cd apps/web && pnpm exec eslint --max-warnings 0 "${@#apps/web/}"' --
-        types_or: [javascript, jsx, ts, tsx]
-        files: ^apps/web/
-        additional_dependencies: []
-        pass_filenames: true
+        entry: bash -c 'cd apps/web && pnpm exec eslint --max-warnings 0 .'
+        pass_filenames: false
+
+  # ---------------------------------------------------------------------------
+  # TypeScript — Type Check
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: tsc
+        name: typescript-check
+        language: node
+        entry: bash -c 'cd apps/web && pnpm exec tsc --noEmit'
+        pass_filenames: false
 
   # ---------------------------------------------------------------------------
   # Python — Pyright (type check)

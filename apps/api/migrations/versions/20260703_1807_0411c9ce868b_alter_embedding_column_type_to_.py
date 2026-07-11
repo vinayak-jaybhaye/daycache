@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-import pgvector
 from alembic import op
+from pgvector.sqlalchemy import Vector
 
 # revision identifiers, used by Alembic.
 revision: str = "0411c9ce868b"
@@ -29,8 +29,8 @@ def upgrade() -> None:
     op.alter_column(
         "embeddings",
         "embedding",
-        type_=pgvector.sqlalchemy.VECTOR(768),
-        existing_type=pgvector.sqlalchemy.VECTOR(1536),
+        type_=Vector(768),
+        existing_type=Vector(1536),
     )
 
     # Recreate the index on the 768-dimensional column
@@ -52,8 +52,8 @@ def downgrade() -> None:
     op.alter_column(
         "embeddings",
         "embedding",
-        type_=pgvector.sqlalchemy.VECTOR(1536),
-        existing_type=pgvector.sqlalchemy.VECTOR(768),
+        type_=Vector(1536),
+        existing_type=Vector(768),
     )
 
     # Recreate the 1536-dimensional index

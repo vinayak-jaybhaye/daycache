@@ -13,8 +13,11 @@ function extractMediaIds(doc: Record<string, unknown>): string[] {
 
   function walk(node: Record<string, unknown> | null | undefined) {
     if (!node) return;
-    if (node.type === "mediaImage" && node.attrs?.mediaId) {
-      ids.push(node.attrs.mediaId);
+    if (node.type === "mediaImage") {
+      const attrs = node.attrs as Record<string, unknown> | undefined;
+      if (attrs?.mediaId) {
+        ids.push(attrs.mediaId as string);
+      }
     }
     if (Array.isArray(node.content)) {
       for (const child of node.content as Array<Record<string, unknown>>) {

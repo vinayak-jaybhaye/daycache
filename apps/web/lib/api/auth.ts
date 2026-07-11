@@ -34,23 +34,31 @@ export interface SessionResponse {
   id: string;
   user_id: string;
   device_id: string;
-  ip_address: string;
-  user_agent: string;
-  last_activity_at: string;
-  expires_at: string;
+  device_name: string | null;
+  device_platform: string;
+  created_ip: string | null;
+  created_user_agent: string | null;
+  last_used_at: string;
   created_at: string;
+  is_current: boolean;
+}
+
+export interface DeviceSessionResponse {
+  id: string;
+  created_ip: string | null;
+  created_user_agent: string | null;
+  last_used_at: string;
+  is_current: boolean;
 }
 
 export interface DeviceResponse {
   id: string;
-  user_id: string;
-  device_name: string;
-  device_type: string;
-  os: string;
-  last_ip: string;
-  sessions: SessionResponse[];
+  name: string | null;
+  platform: string;
+  last_seen_at: string;
   created_at: string;
-  last_activity_at: string;
+  is_current: boolean;
+  sessions: DeviceSessionResponse[];
 }
 
 // ============ Auth API ============

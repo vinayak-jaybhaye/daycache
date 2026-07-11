@@ -16,6 +16,8 @@ import {
   LogOut,
 } from "lucide-react";
 import { useUserStore } from "@/store/useUserStore";
+import type { Theme } from "@/lib/api/users";
+import type { DeviceSessionResponse } from "@/lib/api/auth";
 
 export const SettingsView = () => {
   const {
@@ -169,7 +171,7 @@ export const SettingsView = () => {
                       checked={settings.theme === t}
                       onChange={() =>
                         updateSettings({
-                          theme: t as "morning" | "midnight" | "forest" | "cinematic",
+                          theme: t as Theme,
                         })
                       }
                       className="hidden"
@@ -316,7 +318,7 @@ export const SettingsView = () => {
                     </h4>
                   </div>
                   <div className="flex flex-col gap-3 p-4">
-                    {device.sessions.map((session: Record<string, unknown>) => (
+                    {device.sessions.map((session: DeviceSessionResponse) => (
                       <div
                         key={session.id}
                         className="flex flex-col gap-2 border-b border-[var(--border-soft)] pb-3 last:border-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"

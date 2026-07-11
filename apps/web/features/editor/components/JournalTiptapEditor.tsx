@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -110,7 +110,7 @@ export const JournalTiptapEditor: React.FC<JournalTiptapEditorProps> = ({
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
 
-    const storage = (editor.storage as Record<string, unknown>).mediaImage as
+    const storage = (editor.storage as unknown as Record<string, unknown>).mediaImage as
       MediaImageStorage | undefined;
 
     if (storage) {

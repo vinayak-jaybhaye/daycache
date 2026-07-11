@@ -124,7 +124,7 @@ export function useEditorCore(options: UseEditorCoreOptions): Editor | null {
   // Set media resolver on storage after editor is created
   useMemo(() => {
     if (editor && mediaResolver) {
-      const storage = (editor.storage as Record<string, unknown>).mediaImage as
+      const storage = (editor.storage as unknown as Record<string, unknown>).mediaImage as
         { resolver?: MediaResolver } | undefined;
       if (storage) {
         // eslint-disable-next-line react-hooks/immutability

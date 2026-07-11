@@ -30,10 +30,12 @@ export interface UpdateProfileRequest {
   timezone?: string;
 }
 
+export type Theme = "light" | "dark" | "system" | "morning" | "midnight" | "forest" | "cinematic";
+
 export interface SettingsResponse {
   id: string;
   user_id: string;
-  theme: "light" | "dark" | "auto";
+  theme: Theme;
   language: string;
   locale?: string; // Locale setting
   timezone?: string; // Timezone setting
@@ -48,7 +50,7 @@ export interface SettingsResponse {
 }
 
 export interface UpdateSettingsRequest {
-  theme?: "light" | "dark" | "auto";
+  theme?: Theme;
   language?: string;
   notifications_enabled?: boolean;
   email_digest_frequency?: string;
